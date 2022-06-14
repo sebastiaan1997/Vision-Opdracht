@@ -1,0 +1,26 @@
+<annotation verified="yes">
+	<folder>waldo</folder>
+	<filename>7_3_1.jpg</filename>
+	<path>D:\projects\python\vision2020\research\wheres-waldo\Hey-Waldo\256\waldo\7_3_1.jpg</path>
+	<source>
+		<database>Unknown</database>
+	</source>
+	<size>
+		<width>256</width>
+		<height>256</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>waldo</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<bndbox>
+			<xmin>21</xmin>
+			<ymin>96</ymin>
+			<xmax>49</xmax>
+			<ymax>125</ymax>
+		</bndbox>
+	</object>
+</annotation>

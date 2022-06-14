@@ -1,0 +1,14 @@
+<annotation>
+	<folder>waldo</folder>
+	<filename>13_0_3.jpg</filename>
+	<path>D:\projects\python\vision2020\research\wheres-waldo\Hey-Waldo\256\waldo\13_0_3.jpg</path>
+	<source>
+		<database>Unknown</database>
+	</source>
+	<size>
+		<width>256</width>
+		<height>256</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+</annotation>

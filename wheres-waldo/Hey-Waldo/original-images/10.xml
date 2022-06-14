@@ -1,0 +1,26 @@
+<annotation>
+	<folder>original-images</folder>
+	<filename>10.jpg</filename>
+	<path>D:\projects\python\vision2020\research\wheres-waldo\Hey-Waldo\original-images\10.jpg</path>
+	<source>
+		<database>Unknown</database>
+	</source>
+	<size>
+		<width>1600</width>
+		<height>980</height>
+		<depth>3</depth>
+	</size>
+	<segmented>0</segmented>
+	<object>
+		<name>waldo</name>
+		<pose>Unspecified</pose>
+		<truncated>0</truncated>
+		<difficult>0</difficult>
+		<bndbox>
+			<xmin>511</xmin>
+			<ymin>732</ymin>
+			<xmax>537</xmax>
+			<ymax>771</ymax>
+		</bndbox>
+	</object>
+</annotation>
