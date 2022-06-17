@@ -273,10 +273,10 @@ def yolo_loss_v2(n_classes: int):
     """
     @tf.function
     def yolo_loss_v2_impl(y_true, y_pred):
-        # Get the classes (in our case 1).
+        tf.print("\n")
+        # Get the classes (in our case 1 waldo).
         label_class = y_true[..., 0]
         # Get the bounding boxes.
-        print(k.shape(y_true), k.shape(y_pred), n_classes)
         label_box = y_true[..., 1:5]
 
         label_prob = y_true[..., 5]
@@ -289,7 +289,7 @@ def yolo_loss_v2(n_classes: int):
         pred_box = y_pred[..., 1:5]
         pred_prob = y_true[..., 5]
 
-        mask = k.greater_equal(label_prob, 1)
+        mask = k.greater_equal(label_prob, 1.)
         # >= 7x7: [ x: 0..1, y: 0..1, w: 0.., h 0..]
 
         lbl_x = tf.boolean_mask(label_box[..., 0], mask)
@@ -305,6 +305,7 @@ def yolo_loss_v2(n_classes: int):
         loss_x = k.square(pred_x - lbl_x)
         # >= 7x7  x: 0..1
         loss_y = k.square(pred_y - lbl_y)
+        tf.print("loss_x", loss_x)
         # >= 7x7 x: 0..1
 
         pos_loss = k.sum(loss_x + loss_y)
@@ -315,10 +316,16 @@ def yolo_loss_v2(n_classes: int):
         loss_h = k.square(pred_h - lbl_h)
 
         size_loss = k.sum(loss_w + loss_h)
+        classifier_loss = k.sum(tf.boolean_mask(
+            k.square(pred_class - label_class), mask))
+        probability_loss = k.sum(tf.boolean_mask(
+            k.square(pred_prob - label_prob), tf.less(label_prob, 1.)))
 
-        classifier_loss = k.sum(pred_class - label_class)
+        # tf.print("x", lbl_x, pred_x)
+        tf.print("\nLoss:\n", pos_loss, size_loss,
+                 classifier_loss, probability_loss, "\n")
 
-        return pos_loss + size_loss + classifier_loss
+        return pos_loss + size_loss + classifier_loss + probability_loss
 
     return yolo_loss_v2_impl
 
