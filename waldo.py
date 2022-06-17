@@ -11,6 +11,9 @@ from collections import namedtuple
 from random import shuffle
 from shutil import copy
 import xmltodict
+# from cv2 import imread
+import cv2
+from typing import Iterable
 
 
 root_path = Path(__file__).parent.joinpath("wheres-waldo/Hey-Waldo")
@@ -47,11 +50,6 @@ def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
                 continue
 
             xml = xml_document["annotation"]["object"]["bndbox"]
-            # <xmin>1</xmin>
-            # <ymin>163</ymin>
-            # <xmax>27</xmax>
-            # <ymax>221</ymax>
-
             arr = np.array([
                 float(xml["xmin"]), float(xml["ymin"]), float(
                     xml["xmax"]), float(xml["ymax"])
@@ -61,6 +59,14 @@ def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
             print(xml_document)
             raise e
     return results
+
+
+def load_images(images: List[Tuple[Path, np.ndarray]]):
+    for path, bbox in images:
+        yield (cv2.imread(str(path)), bbox)
+
+
+
 
 
 def sample_images(image_set: ImageSet, training=0.7, validiation=0.2, testing=0.1) -> TrainingSet:
