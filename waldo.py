@@ -1,3 +1,5 @@
+
+
 from cgi import test
 from logging import root
 import shutil
@@ -66,7 +68,19 @@ def load_images(images: List[Tuple[Path, np.ndarray]]):
         yield (cv2.imread(str(path)), bbox)
 
 
+def change_brightness(img: np.ndarray, mult: float) -> np.ndarray:
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    hsv[:, :, 2] = np.maximum(np.multiply(
+        hsv[:, :, 2].astype(np.float64), mult).astype(np.uint8), np.ones_like(hsv) * 255, dtype=np.uint8)
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
+
+def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
+    return shuffle([
+        *[change_brightness(img, 0.5) for img, lbl in images],
+        *[change_brightness(img, 1.5) for img, lbl in images]
+        * images
+    ])
 
 
 def sample_images(image_set: ImageSet, training=0.7, validiation=0.2, testing=0.1) -> TrainingSet:
