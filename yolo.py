@@ -325,8 +325,8 @@ def yolo_loss_v2(n_classes: int):
 
 LR: List[Tuple[int, float]] = [
     (0, 0.01),
-    (50, 0.001),
-    (100, 0.0001)
+    (10, 0.001),
+    (20, 0.0001)
 
 ]
 
@@ -375,7 +375,7 @@ if __name__ == "__main__":
             yolo_loss, [model.input, model.output], Tout=tf.float64)
         model.compile(optimizer=Adam(),
                       loss=yolo_loss_v2(1))
-        res = model.fit(ds, epochs=135, validation_data=vds,
+        res = model.fit(ds, epochs=40, validation_data=vds,
                         callbacks=[learning_rate])
         model.save("yolo_waldo" + str(i), overwrite=True)
         with open(f"training{i}", "w") as f:
