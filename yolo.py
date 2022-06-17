@@ -261,6 +261,8 @@ def yolo_loss_v2(n_classes: int):
     Get the implementation of the loss function for Yolo
     Based on implementation described by Vivek Maskara
     (https://www.maskaravivek.com/post/yolov1/)
+    And the implementation descibed from GitHub author "experiencor"
+    (https://github.com/experiencor/keras-yolo2/blob/master/Yolo%20Step-by-Step.ipynb)
 
     Arguments:
     ----------
