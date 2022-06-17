@@ -334,8 +334,6 @@ if __name__ == "__main__":
     validation = images[int(len(images)//2):end]
     images_input = [i[0] for i in training]
     bounding_boxes = [i[1] for i in training]
-    print(bounding_boxes)
-    exit()
 
     v_img = [i[0] for i in training]
     v_bb = [i[1] for i in training]
