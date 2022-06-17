@@ -195,7 +195,7 @@ def get_yolo_model(img_h=448, img_w=448) -> Model:
     model.add(Dense(512))
     model.add(Dense(1024))
     model.add(Dropout(0.5))
-    model.add(Dense((7*7*5), activation='sigmoid'))
+    model.add(Dense((7*7*5), activation='relu'))
     model.add(Reshape((7, 7, 5)))
     # model.add(Reshape(target_shape=(7, 7, 1)))
     return model
