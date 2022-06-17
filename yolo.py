@@ -277,33 +277,45 @@ def yolo_loss_v2(n_classes: int):
         label_class = y_true[..., 0]
         # Get the bounding boxes.
         print(k.shape(y_true), k.shape(y_pred), n_classes)
-        label_box = y_true[..., n_classes-1:n_classes+5-1]
+        label_box = y_true[..., 1:5]
 
-        label_prob = y_true[..., n_classes+5-1]
+        label_prob = y_true[..., 5]
 
         # Get the classes from the predictions
         pred_class = y_pred[..., 0]
         # >= 7x7: [ waldo: 0..1 ]
 
         # Get the bounding boxes from the predictions
-        pred_box = y_pred[..., n_classes:n_classes+5-1]
+        pred_box = y_pred[..., 1:5]
+        pred_prob = y_true[..., 5]
+
+        mask = k.greater_equal(label_prob, 1)
         # >= 7x7: [ x: 0..1, y: 0..1, w: 0.., h 0..]
 
-        loss_x = k.square(pred_box[..., 0] - label_box[..., 0])
+        lbl_x = tf.boolean_mask(label_box[..., 0], mask)
+        lbl_y = tf.boolean_mask(label_box[..., 1], mask)
+        lbl_w = tf.boolean_mask(label_box[..., 2], mask)
+        lbl_h = tf.boolean_mask(label_box[..., 3], mask)
+
+        pred_x = tf.boolean_mask(pred_box[..., 0], mask)
+        pred_y = tf.boolean_mask(pred_box[..., 1], mask)
+        pred_w = tf.boolean_mask(pred_box[..., 2], mask)
+        pred_h = tf.boolean_mask(pred_box[..., 3], mask)
+
+        loss_x = k.square(pred_x - lbl_x)
         # >= 7x7  x: 0..1
-        loss_y = k.square(pred_box[..., 1] - label_box[..., 1])
+        loss_y = k.square(pred_y - lbl_y)
         # >= 7x7 x: 0..1
 
-        pos_loss = k.sum((loss_x + loss_y) * label_prob)
+        pos_loss = k.sum(loss_x + loss_y)
 
         # TODO, Loss function crashes when sqrt
         # Probably negative number for sqrt
-        loss_w = k.square(
-            k.sqrt(k.abs(pred_box[..., 2])) - k.sqrt(k.abs(label_box[..., 2])))
-        loss_h = k.square(
-            k.sqrt(k.abs(pred_box[..., 3])) - k.sqrt(k.abs(label_box[..., 3])))
+        loss_w = k.square(pred_w - lbl_w)
+        loss_h = k.square(pred_h - lbl_h)
 
-        size_loss = k.sum((loss_w + loss_h) * label_prob)
+        size_loss = k.sum(loss_w + loss_h)
+
         classifier_loss = k.sum(pred_class - label_class)
 
         return pos_loss + size_loss + classifier_loss
