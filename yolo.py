@@ -18,6 +18,7 @@ from keras.regularizers import l2
 import keras.backend as k
 import os
 import datetime
+from keras.callbacks import LearningRateScheduler
 
 from json import dumps
 
@@ -206,7 +207,6 @@ def get_yolo_model(img_h=448, img_w=448) -> Model:
 def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_size=(448, 448)) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
     for image, bbox in images:
         # First split the bounding box into variables
-
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
         x = bbox[0] + (0.5*w)
@@ -275,15 +275,16 @@ def yolo_loss_v2(n_classes: int):
         label_class = y_true[..., 0]
         # Get the bounding boxes.
         print(k.shape(y_true), k.shape(y_pred), n_classes)
-        label_box = y_true[..., n_classes-1:n_classes+4-1]
+        label_box = y_true[..., n_classes-1:n_classes+5-1]
+
         label_prob = y_true[..., n_classes+5-1]
 
         # Get the classes from the predictions
-        pred_class = y_pred[..., : n_classes-1]
+        pred_class = y_pred[..., 0]
         # >= 7x7: [ waldo: 0..1 ]
 
         # Get the bounding boxes from the predictions
-        pred_box = y_pred[..., n_classes:n_classes+4-1]
+        pred_box = y_pred[..., n_classes:n_classes+5-1]
         # >= 7x7: [ x: 0..1, y: 0..1, w: 0.., h 0..]
 
         loss_x = k.square(pred_box[..., 0] - label_box[..., 0])
@@ -291,15 +292,34 @@ def yolo_loss_v2(n_classes: int):
         loss_y = k.square(pred_box[..., 1] - label_box[..., 1])
         # >= 7x7 x: 0..1
 
-        pos_loss = loss_x + loss_y
-        pos_loss = k.sum(pos_loss * label_prob)
-        loss_w = k.square(k.sqrt(pred_box[..., 2]) - label_box[..., 2])
-        loss_h = k.square(k.sqrt(pred_box[..., 3]) - label_box[..., 3])
-        size_loss = k.sum((loss_w + loss_h) * label_prob)
+        pos_loss = k.sum((loss_x + loss_y) * label_prob)
 
-        return pos_loss + size_loss
+        # TODO, Loss function crashes when sqrt
+        # Probably negative number for sqrt
+        loss_w = k.square(pred_box[..., 2] - label_box[..., 2])
+        loss_h = k.square(pred_box[..., 3] - label_box[..., 3])
+
+        size_loss = k.sum((loss_w + loss_h) * label_prob)
+        classifier_loss = k.sum(pred_class - label_class)
+
+        return pos_loss + size_loss + classifier_loss
 
     return yolo_loss_v2_impl
+
+
+LR: List[Tuple[int, float]] = [
+    (0, 0.01),
+    (10, 0.001),
+    (20, 0.0001)
+
+]
+
+
+@LearningRateScheduler
+def learning_rate(epoch: int, lr: float) -> float:
+    for e, l in reversed(LR):
+        if e <= epoch:
+            return l
 
 
 if __name__ == "__main__":
@@ -338,7 +358,8 @@ if __name__ == "__main__":
             yolo_loss, [model.input, model.output], Tout=tf.float64)
         model.compile(optimizer=Adam(),
                       loss=yolo_loss_v2(1))
-        res = model.fit(ds, epochs=20, validation_data=vds)
+        res = model.fit(ds, epochs=40, validation_data=vds,
+                        callbacks=[learning_rate])
         model.save("yolo_waldo" + str(i), overwrite=True)
         with open(f"training{i}", "w") as f:
             f.write(str(res))
