@@ -1,5 +1,5 @@
 from email.mime import base
-from waldo import get_waldos, load_images
+from waldo import get_waldos, load_images, argument_dataset
 import cv2
 import itertools as itr
 from typing import Tuple, List, Iterable
@@ -222,8 +222,9 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         # Convert the x,y coordinate of the box to an index
         cell_index = int(cell_x + (cell_y * grid))
         # Calculate the relative position of the bounding box to the grid cell
-        scaled_x = x / cell_w
-        scaled_y = y / cell_h
+
+        scaled_x = (x - (cell_w * cell_x)) / cell_w
+        scaled_y = (y - (cell_h * cell_y)) / cell_h
         # Calculate the size position of the bounding box to the grid cell
         # Scaled size of the object. Might be bigger than 1 if object is bigger than the cell.
         scaled_w = w / cell_w
@@ -327,11 +328,14 @@ if __name__ == "__main__":
     images = list(images)
     # print(images)
     images = list(prepare_data(images))
+
     training = images[:int(len(images)//2)]
     end = int(((len(images)//2)+(len(images)//2))*0.2)
     validation = images[int(len(images)//2):end]
     images_input = [i[0] for i in training]
     bounding_boxes = [i[1] for i in training]
+    print(bounding_boxes)
+    exit()
 
     v_img = [i[0] for i in training]
     v_bb = [i[1] for i in training]
