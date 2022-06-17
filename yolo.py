@@ -298,8 +298,10 @@ def yolo_loss_v2(n_classes: int):
 
         # TODO, Loss function crashes when sqrt
         # Probably negative number for sqrt
-        loss_w = k.square(pred_box[..., 2] - label_box[..., 2])
-        loss_h = k.square(pred_box[..., 3] - label_box[..., 3])
+        loss_w = k.square(
+            k.sqrt(k.abs(pred_box[..., 2])) - k.sqrt(k.abs(label_box[..., 2])))
+        loss_h = k.square(
+            k.sqrt(k.abs(pred_box[..., 3])) - k.sqrt(k.abs(label_box[..., 3])))
 
         size_loss = k.sum((loss_w + loss_h) * label_prob)
         classifier_loss = k.sum(pred_class - label_class)
