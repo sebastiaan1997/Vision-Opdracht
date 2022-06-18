@@ -70,17 +70,40 @@ def load_images(images: List[Tuple[Path, np.ndarray]]):
 
 def change_brightness(img: np.ndarray, mult: float) -> np.ndarray:
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    hsv[:, :, 2] = np.maximum(np.multiply(
-        hsv[:, :, 2].astype(np.float64), mult).astype(np.uint8), np.ones_like(hsv) * 255, dtype=np.uint8)
+    hsv = np.minimum(np.maximum(
+        hsv * np.array([1., 1., mult], dtype=np.float32), 255), 0)
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
+
+
+def change_saturation(img: np.ndarray, mult: float) -> np.ndarray:
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    hsv = np.minimum(np.maximum(
+        hsv * np.array([1., mult, 1.], dtype=np.float32), 255), 0)
     return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
 
 def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
-    return shuffle([
-        *[change_brightness(img, 0.5) for img, lbl in images],
-        *[change_brightness(img, 1.5) for img, lbl in images]
-        * images
-    ])
+    print("Argumenting images...")
+    images = list(images)
+    result = []
+    for i in [5, 10, 15]:
+        factor = float(i) * 0.1
+        for img, lbl in images:
+            result.append((change_brightness(img, factor), lbl))
+            result.append((change_saturation(img, factor), lbl))
+
+    for img, lbl in result:
+        lbl = np.array([255, 0, 0, 0], dtype=np.float32) + \
+            (lbl * np.array([-1, 1, 1, 1]))
+        result.append((
+            cv2.flip(img, 0),
+            lbl
+        ))
+    # flipped = result[(, np.abs(lbl * np.array([-1, 1, 1, 1], np.float32))) for img, lbl in result]
+
+    shuffle(result)
+    print("Argumenting finished!")
+    return result
 
 
 def sample_images(image_set: ImageSet, training=0.7, validiation=0.2, testing=0.1) -> TrainingSet:

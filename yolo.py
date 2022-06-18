@@ -1,4 +1,6 @@
+from distutils.log import debug
 from email.mime import base
+from unittest import result
 from waldo import get_waldos, load_images, argument_dataset
 import cv2
 import itertools as itr
@@ -132,73 +134,43 @@ def get_yolo_model(img_h=448, img_w=448) -> Model:
     """Implementatie van het YoLo CNN zoals beschreven in paper"""
     lrelu = tf.keras.layers.LeakyReLU(alpha=0.1)
 
-    model = Sequential()
-    model.add(Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), input_shape=(
-        img_h, img_w, 3), padding='same', activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
+    model = Sequential([
+        Input((448, 448, 3)),
+        Conv2D(64, (7, 7), padding="same", strides=(2, 2), activation=lrelu),
+        MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
+        Conv2D(192, (3, 3), padding="same", activation=lrelu),
+        MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
+        Conv2D(128, (1, 1), padding="same", activation=lrelu),
+        Conv2D(256, (3, 3), padding="same", activation=lrelu),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu),
+        MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu),
+        Conv2D(512, (1, 1), padding="same", activation=lrelu),
+        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
 
-    model.add(Conv2D(filters=192, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
+        Conv2D(512, (1, 1), padding="same", activation=lrelu),
+        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
 
-    model.add(Conv2D(filters=128, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=256, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=256, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=512, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
-
-    model.add(Conv2D(filters=256, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=512, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=256, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=512, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=256, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=512, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=256, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=512, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=512, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=1024, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding='same'))
-
-    model.add(Conv2D(filters=512, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=1024, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=512, kernel_size=(1, 1), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=1024, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=1024, kernel_size=(3, 3), padding='same',
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=1024, kernel_size=(
-        3, 3), strides=(2, 2), padding='same'))
-
-    model.add(Conv2D(filters=1024, kernel_size=(3, 3),
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-    model.add(Conv2D(filters=1024, kernel_size=(3, 3),
-              activation=lrelu, kernel_regularizer=l2(5e-4)))
-
-    model.add(Flatten())
-    model.add(Dense(512))
-    model.add(Dense(1024))
-    model.add(Dropout(0.5))
-    # model.add(Dense((7*7*5), activation='relu'))
-    model.add(Dense((7*7*5), activation='sigmoid'))
-    model.add(Reshape((7, 7, 5)))
-    # model.add(Reshape(target_shape=(7, 7, 1)))
+        Conv2D(512, (1, 1), padding="same", activation=lrelu),
+        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        Conv2D(1024, (3, 3), padding="same", strides=(2, 2), activation=lrelu),
+        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        Flatten(),
+        Dense(4092, activation=lrelu),
+        Dense(7*7*6),
+        Reshape((7, 7, 6))
+    ])
     return model
 
 
@@ -249,14 +221,14 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         ])
 
         cells[cell_x, cell_y] = res
-        yield (cv2.resize(image, target_size), cells)
+        yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255), cells)
 
 
 def iou():
     pass
 
 
-def yolo_loss_v2(n_classes: int):
+def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool = True):
     """
     Get the implementation of the loss function for Yolo
     Based on implementation described by Vivek Maskara
@@ -267,6 +239,7 @@ def yolo_loss_v2(n_classes: int):
     Arguments:
     ----------
         n_classes (int): The number of classes in the dataset
+        debug_print (bool): Enables the debug prints
 
     Returns:
     --------
@@ -275,7 +248,8 @@ def yolo_loss_v2(n_classes: int):
     """
     @tf.function
     def yolo_loss_v2_impl(y_true, y_pred):
-        tf.print("\n")
+        """
+        """
         # Get the classes (in our case 1 waldo).
         label_class = y_true[..., 0]
         # Get the bounding boxes.
@@ -283,26 +257,110 @@ def yolo_loss_v2(n_classes: int):
 
         label_prob = y_true[..., 5]
 
+        print(y_true)
+        mask_shape = (7, 7)
+        # coord_mask = tf.zeros(mask_shape)
+        confidence_mask = tf.zeros(mask_shape)
+        classification_mask = tf.zeros(mask_shape)
+
         # Get the classes from the predictions
-        pred_class = y_pred[..., 0]
+        pred_class = tf.sigmoid(y_pred[..., 0])
         # >= 7x7: [ waldo: 0..1 ]
 
         # Get the bounding boxes from the predictions
         pred_box = y_pred[..., 1:5]
-        pred_prob = y_true[..., 5]
+        pred_prob = tf.sigmoid(y_true[..., 5])
 
-        mask = k.greater_equal(label_prob, 1.)
+        coord_mask = tf.expand_dims(label_prob, -1)
         # >= 7x7: [ x: 0..1, y: 0..1, w: 0.., h 0..]
+        # Get the coordinates and sizes of the predicted labels
 
-        lbl_x = tf.boolean_mask(label_box[..., 0], mask)
-        lbl_y = tf.boolean_mask(label_box[..., 1], mask)
-        lbl_w = tf.boolean_mask(label_box[..., 2], mask)
-        lbl_h = tf.boolean_mask(label_box[..., 3], mask)
+        # >= [[x: 0..1, y: 0..1]]
+        pred_coord = tf.maximum(tf.minimum(pred_box[..., 0:2], 0), 1)
+        # >= [[ w:0.., y: 0.. ]]
 
-        pred_x = tf.boolean_mask(pred_box[..., 0], mask)
-        pred_y = tf.boolean_mask(pred_box[..., 1], mask)
-        pred_w = tf.boolean_mask(pred_box[..., 2], mask)
-        pred_h = tf.boolean_mask(pred_box[..., 3], mask)
+        if debug_print:
+            tf.print("Size in", tf.nn.relu(pred_box[..., 2:4]))
+        pred_size = tf.minimum(tf.maximum(pred_box[..., 2:4], 7.), 0.)
+
+        pred_half_size = pred_size * 0.5  # >= [[ hw: 0.5*w, hh: 0.5*h]]
+
+        lbl_coord = label_box[..., 0:2]  # >= [[x: 0..1, y: 0..1]]
+        lbl_size = label_box[..., 2:4]   # >= [[ w:0.., y: 0.. ]]
+        lbl_half_size = lbl_size * 0.5   # >= [[ hw: 0.5*w, hh: 0.5*h]]
+
+        min_lbl_coord = lbl_coord - lbl_half_size
+        max_lbl_coord = lbl_coord + lbl_half_size
+
+        min_pred_coord = pred_coord - pred_half_size
+        max_pred_coord = pred_coord + pred_half_size
+
+        intersect_mins = k.maximum(min_lbl_coord, min_pred_coord)
+        intersect_max = k.minimum(max_lbl_coord, max_pred_coord)
+
+        intersect_box = k.maximum(intersect_max - intersect_mins, 0.)
+        intersect_area = intersect_box[..., 0] * intersect_box[..., 1]
+
+        lbl_area = lbl_size[..., 0] * lbl_size[..., 1]
+        pred_area = pred_size[..., 0] * pred_size[..., 1]
+
+        iou = tf.truediv(intersect_area, lbl_area + pred_area - intersect_area)
+        box_confidence = iou * label_prob
+
+        box_class_confidence = box_confidence * label_class
+
+        pred_coord_4 = pred_coord
+        pred_size_4 = pred_size
+
+        pred_half_size_4 = pred_size_4 * .5
+        pred_coord_min_4 = pred_coord_4 - pred_half_size_4
+        pred_coord_max_4 = pred_coord_4 + pred_half_size_4
+
+        intersect_min_4 = tf.maximum(pred_coord_min_4, min_lbl_coord)
+        intersect_max_4 = tf.minimum(pred_coord_max_4, max_lbl_coord)
+        intersect_size_4 = tf.maximum(intersect_max_4 - intersect_min_4, 0.)
+        intersect_area_4 = intersect_size_4[..., 0] * intersect_size_4[..., 1]
+
+        pred_area_4 = pred_size_4[..., 0] * pred_size_4[..., 1]
+        iou_4 = tf.truediv(intersect_area_4, pred_area_4 +
+                           lbl_area - intersect_area_4)
+        best_iou = tf.reduce_max(iou_4, axis=2)
+        # mask = mask + tf.cast(iou_4 < 0.6, tf.float32) * (1 - )
+        print(confidence_mask)
+
+        confidence_mask = confidence_mask + \
+            tf.cast(best_iou < .6, tf.float32) * \
+            (1 - label_prob)
+        confidence_mask = confidence_mask + label_prob
+
+        class_mask = label_prob + label_class
+
+        no_boxes_mask = tf.cast(coord_mask < .5, tf.float32)
+
+        nb_coord_box = tf.reduce_sum(tf.cast(coord_mask > 0.0, tf.float32))
+        nb_confidence_box = tf.reduce_sum(
+            tf.cast(confidence_mask > 0.0, tf.float32))
+        nb_class_box = tf.reduce_sum(tf.cast(class_mask > 0.0, tf.float32))
+        print(coord_mask, lbl_coord, lbl_coord)
+        loss_pos = tf.reduce_sum(
+            tf.square(lbl_coord - pred_coord) * coord_mask)
+
+        if debug_print:
+            tf.print("Loss for size", "Lbl_size", lbl_size, "Pred size", pred_size,
+                     tf.square(lbl_size - pred_size))
+        loss_size = tf.reduce_sum(tf.square(lbl_size - pred_size) * coord_mask)
+        loss_confidence = tf.reduce_sum(
+            tf.square(label_prob-pred_prob) * confidence_mask)
+        # loss_class = tf.nn.sparse_softmax_cross_entropy_with_logits(
+        #     labels=label_class, logits=pred_class)
+        pred_class = tf.clip_by_value(pred_class, -1e12, 1e12)
+        loss_class = tf.reduce_sum(
+            (label_class - pred_class) * class_mask) / (nb_class_box + 1e-6)
+        if result_print or debug_print:
+            tf.print("\n losses:", loss_pos, loss_size,
+                     loss_confidence, loss_class, "\n")
+        loss = loss_pos + loss_size + loss_confidence + loss_class
+        return loss
 
         loss_x = k.square(pred_x - lbl_x)
         # >= 7x7  x: 0..1
@@ -332,6 +390,8 @@ def yolo_loss_v2(n_classes: int):
     return yolo_loss_v2_impl
 
 
+tensorboard_callback = tf.keras.callbacks.TensorBoard(
+    log_dir="tensorboard_log", histogram_freq=1)
 LR: List[Tuple[int, float]] = [
     (0, 0.01),
     (10, 0.001),
@@ -340,7 +400,7 @@ LR: List[Tuple[int, float]] = [
 ]
 
 
-@LearningRateScheduler
+@ LearningRateScheduler
 def learning_rate(epoch: int, lr: float) -> float:
     for e, l in reversed(LR):
         if e <= epoch:
@@ -348,8 +408,9 @@ def learning_rate(epoch: int, lr: float) -> float:
 
 
 if __name__ == "__main__":
-    images = load_images(get_waldos("256"))
+    images = argument_dataset(load_images(get_waldos("256")))
     images = list(images)
+    print("Images", len(images))
     # print(images)
     images = list(prepare_data(images))
 
@@ -376,14 +437,15 @@ if __name__ == "__main__":
     vds = tf.data.Dataset.from_tensor_slices(
         (v_img, v_bb)).batch(1)
     model = get_yolo_model()
+    model.build((-1, 224, 224, 3))
     model.summary()
 
     try:
         i = 5
         loss = tf.py_function(
             yolo_loss, [model.input, model.output], Tout=tf.float64)
-        model.compile(optimizer=Adam(),
-                      loss=yolo_loss_v2(1))
+        model.compile(optimizer=Adam(0.01),
+                      loss=yolo_loss_v2(1, False, False))
         res = model.fit(ds, epochs=40, validation_data=vds,
                         callbacks=[learning_rate])
         model.save("yolo_waldo" + str(i), overwrite=True)
