@@ -65,7 +65,8 @@ def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
 
 def load_images(images: List[Tuple[Path, np.ndarray]]):
     for path, bbox in images:
-        yield (cv2.imread(str(path)), bbox)
+        img = cv2.imread(str(path))
+        yield (img, bbox)
 
 
 def change_brightness(img: np.ndarray, mult: float) -> np.ndarray:
@@ -82,23 +83,37 @@ def change_saturation(img: np.ndarray, mult: float) -> np.ndarray:
     return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
 
 
+def flip_v(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    flipped_img = cv2.flip(img, 0)
+    shape = img.shape
+    width = shape[0]
+    new_lbl = lbl.copy()
+    new_lbl[0] = width - lbl[0]
+    return flipped_img, new_lbl
+
+
 def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
     print("Argumenting images...")
     images = list(images)
-    result = []
-    for i in [5, 10, 15]:
-        factor = float(i) * 0.1
-        for img, lbl in images:
-            result.append((change_brightness(img, factor), lbl))
-            result.append((change_saturation(img, factor), lbl))
+    result = [*images]
+    result.extend([flip_v(img, lbl) for img, lbl in result])
 
-    for img, lbl in result:
-        lbl = np.array([255, 0, 0, 0], dtype=np.float32) + \
-            (lbl * np.array([-1, 1, 1, 1]))
-        result.append((
-            cv2.flip(img, 0),
-            lbl
-        ))
+    result.extend([
+        *[(change_brightness(img, 0.8), lbl) for img, lbl, in result],
+        *[(change_brightness(img, 1.2), lbl) for img, lbl, in result]])
+    result.extend([
+        *[(change_saturation(img, 0.8), lbl) for img, lbl, in result],
+        *[(change_saturation(img, 1.2), lbl) for img, lbl, in result]])
+
+    # result.extend([flip_v(img, lbl) for img, lbl in result])
+
+    # for img, lbl in result:
+    #     lbl = np.array([255, 0, 0, 0], dtype=np.float32) + \
+    #         (lbl * np.array([-1, 1, 1, 1]))
+    #     result.append((
+    #         cv2.flip(img, 0),
+    #         lbl
+    #     ))
     # flipped = result[(, np.abs(lbl * np.array([-1, 1, 1, 1], np.float32))) for img, lbl in result]
 
     shuffle(result)

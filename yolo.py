@@ -1,3 +1,4 @@
+from ast import arg
 from distutils.log import debug
 from email.mime import base
 from unittest import result
@@ -12,7 +13,7 @@ import numpy as np
 from keras.utils.image_dataset import paths_and_labels_to_dataset
 from keras.utils import to_categorical, load_img, img_to_array, image_dataset_from_directory, plot_model
 from keras.layers import Conv3D, Conv2D, MaxPooling2D, Dense, Flatten, GlobalAveragePooling2D, Dropout, Input, Resizing, Rescaling, Layer, Reshape, LeakyReLU
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 from keras.backend import less
 from keras.models import Sequential, Model
 from re import X
@@ -168,7 +169,7 @@ def get_yolo_model(img_h=448, img_w=448) -> Model:
         Conv2D(1024, (3, 3), padding="same", activation=lrelu),
         Flatten(),
         Dense(4092, activation=lrelu),
-        Dense(7*7*6),
+        Dense(7*7*6, activation=lrelu),
         Reshape((7, 7, 6))
     ])
     return model
@@ -178,14 +179,19 @@ def get_yolo_model(img_h=448, img_w=448) -> Model:
 
 
 def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_size=(448, 448)) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
-    for image, bbox in images:
+    for index, (image, bbox) in enumerate(images):
         # First split the bounding box into variables
         w = bbox[2] - bbox[0]
         h = bbox[3] - bbox[1]
         x = bbox[0] + (0.5*w)
         y = bbox[1] + (0.5*h)
         # Descide the size of the cells or anchors of in the image
-        shape = image.shape
+        try:
+            shape = image.shape
+
+        except Exception as e:
+            print(f"failed at index {index}")
+            raise e
         cell_w = shape[0] / grid
         cell_h = shape[1] / grid
         # Descide the anchor the object belongs to
@@ -221,11 +227,24 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         ])
 
         cells[cell_x, cell_y] = res
-        yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255), cells)
+        yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255.), cells)
 
 
 def iou():
     pass
+
+
+def get_bounding_box(prediction: np.ndarray, grid_size: int) -> np.ndarray:
+    probabilities = prediction[..., 0]
+    print(prediction.shape)
+    print("Probs", probabilities)
+    best_bet_y = np.argmax(probabilities, axis=1)
+    best_bet_x = np.argmax(probabilities[..., best_bet_y, 0])
+    print(best_bet_x, best_bet_y[best_bet_x])
+    coordinates = prediction[best_bet_x,  best_bet_y[best_bet_x], 1:5]
+    absolute_coords = coordinates + \
+        np.array([best_bet_x, best_bet_y[best_bet_x], 0, 0])
+    return absolute_coords / float(grid_size)
 
 
 def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool = True):
@@ -264,25 +283,24 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
         classification_mask = tf.zeros(mask_shape)
 
         # Get the classes from the predictions
-        pred_class = tf.sigmoid(y_pred[..., 0])
+        pred_class = y_pred[..., 0]
         # >= 7x7: [ waldo: 0..1 ]
 
         # Get the bounding boxes from the predictions
         pred_box = y_pred[..., 1:5]
-        pred_prob = tf.sigmoid(y_true[..., 5])
+        pred_prob = y_true[..., 5]
 
         coord_mask = tf.expand_dims(label_prob, -1)
         # >= 7x7: [ x: 0..1, y: 0..1, w: 0.., h 0..]
         # Get the coordinates and sizes of the predicted labels
 
         # >= [[x: 0..1, y: 0..1]]
-        pred_coord = tf.maximum(tf.minimum(pred_box[..., 0:2], 0), 1)
+        pred_coord = pred_box[..., 0:2]
         # >= [[ w:0.., y: 0.. ]]
 
         if debug_print:
             tf.print("Size in", tf.nn.relu(pred_box[..., 2:4]))
-        pred_size = tf.minimum(tf.maximum(pred_box[..., 2:4], 7.), 0.)
-
+        pred_size = pred_box[..., 2:4]
         pred_half_size = pred_size * 0.5  # >= [[ hw: 0.5*w, hh: 0.5*h]]
 
         lbl_coord = label_box[..., 0:2]  # >= [[x: 0..1, y: 0..1]]
@@ -325,8 +343,6 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
         iou_4 = tf.truediv(intersect_area_4, pred_area_4 +
                            lbl_area - intersect_area_4)
         best_iou = tf.reduce_max(iou_4, axis=2)
-        # mask = mask + tf.cast(iou_4 < 0.6, tf.float32) * (1 - )
-        print(confidence_mask)
 
         confidence_mask = confidence_mask + \
             tf.cast(best_iou < .6, tf.float32) * \
@@ -348,7 +364,15 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
         if debug_print:
             tf.print("Loss for size", "Lbl_size", lbl_size, "Pred size", pred_size,
                      tf.square(lbl_size - pred_size))
-        loss_size = tf.reduce_sum(tf.square(lbl_size - pred_size) * coord_mask)
+        # Should be sqrt, but looking for option to limit values
+        pred_size_gt_0 = tf.maximum(pred_size, 0.)
+        lbl_size_gt_0 = tf.maximum(lbl_size, 0.)
+        # tf.print("pred_size_gt_0", pred_size_gt_0)
+        # tf.print("lbl_size_gt_0", lbl_size_gt_0)
+        individual_loss = tf.square(
+            ((tf.sqrt(pred_size_gt_0 * coord_mask)) - (tf.sqrt(lbl_size_gt_0 * coord_mask))) * coord_mask)
+        # tf.print("individual_loss", individual_loss)
+        loss_size = tf.reduce_sum(individual_loss)
         loss_confidence = tf.reduce_sum(
             tf.square(label_prob-pred_prob) * confidence_mask)
         # loss_class = tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -362,41 +386,17 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
         loss = loss_pos + loss_size + loss_confidence + loss_class
         return loss
 
-        loss_x = k.square(pred_x - lbl_x)
-        # >= 7x7  x: 0..1
-        loss_y = k.square(pred_y - lbl_y)
-        tf.print("loss_x", loss_x)
-        # >= 7x7 x: 0..1
-
-        pos_loss = k.sum(loss_x + loss_y)
-
-        # TODO, Loss function crashes when sqrt
-        # Probably negative number for sqrt
-        loss_w = k.square(pred_w - lbl_w)
-        loss_h = k.square(pred_h - lbl_h)
-
-        size_loss = k.sum(loss_w + loss_h)
-        classifier_loss = k.sum(tf.boolean_mask(
-            k.square(pred_class - label_class), mask))
-        probability_loss = k.sum(tf.boolean_mask(
-            k.square(pred_prob - label_prob), tf.less(label_prob, 1.)))
-
-        # tf.print("x", lbl_x, pred_x)
-        tf.print("\nLoss:\n", pos_loss, size_loss,
-                 classifier_loss, probability_loss, "\n")
-
-        return pos_loss + size_loss + classifier_loss + probability_loss
-
     return yolo_loss_v2_impl
 
 
 tensorboard_callback = tf.keras.callbacks.TensorBoard(
     log_dir="tensorboard_log", histogram_freq=1)
 LR: List[Tuple[int, float]] = [
-    (0, 0.01),
-    (10, 0.001),
-    (20, 0.0001)
-
+    (0, 0.1e-2),
+    (30, 0.1e-3),
+    (60, 0.1e-4),
+    (90, 0.1e-5),
+    (120, 0.1e-6)
 ]
 
 
@@ -408,7 +408,9 @@ def learning_rate(epoch: int, lr: float) -> float:
 
 
 if __name__ == "__main__":
-    images = argument_dataset(load_images(get_waldos("256")))
+    # images = argument_dataset(load_images(get_waldos("256")))
+    images = load_images(get_waldos("256"))
+
     images = list(images)
     print("Images", len(images))
     # print(images)
@@ -444,9 +446,9 @@ if __name__ == "__main__":
         i = 5
         loss = tf.py_function(
             yolo_loss, [model.input, model.output], Tout=tf.float64)
-        model.compile(optimizer=Adam(0.01),
+        model.compile(optimizer=Adam(learning_rate=0.5e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005),
                       loss=yolo_loss_v2(1, False, False))
-        res = model.fit(ds, epochs=40, validation_data=vds,
+        res = model.fit(ds, epochs=135, validation_data=vds, batch_size=5,
                         callbacks=[learning_rate])
         model.save("yolo_waldo" + str(i), overwrite=True)
         with open(f"training{i}", "w") as f:
