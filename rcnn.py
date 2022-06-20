@@ -1,24 +1,27 @@
-from keras.layers import Conv2d, Dense, MaxPool2D, Flatten, Pool
-from keras.models import Model, Sequential
-import os
-import cv2
-import keras
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-from keras.applications.vgg16 import VGG16
-import tensorflow as tf
-from typing import Enumerable
-# https://towardsdatascience.com/step-by-step-r-cnn-implementation-from-scratch-in-python-e97101ccde55
+from waldo import get_waldos, load_images
+from util_rcnn import calculate_intersection_over_union
 from typing import List, Tuple
-from util_rcnn import iou
-from research.waldo import get_waldos, load_images
+import tensorflow as tf
+from keras.utils import image_dataset_from_directory
+from keras.applications.vgg16 import VGG16
+import numpy as np
+from typing import Generator
+import keras
+import cv2
+from random import choice
+from keras.layers import Conv2D, Dense, MaxPool2D, Flatten, Input
+from keras.models import Model, Sequential
+
+# from tensorflow.data import Dataset
+
+
+# https://towardsdatascience.com/step-by-step-r-cnn-implementation-from-scratch-in-python-e97101ccde55
 
 
 ss = None
 
 
-def propose_regions(image: np.ndarray, amount = 2000) -> Enumerable[np.ndarray]:
+def propose_regions(image: np.ndarray, amount=2000):
     global ss
     if ss is None:
         ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
@@ -35,21 +38,37 @@ def get_vgg16_model(pre_trained: bool = True) -> Model:
         return model
 
     return Sequential([
-        Conv2d(64, (3, 3), name="conv64_1"),
-        Conv2d(64, (3, 3), name="conv64_2"),
+        Conv2D(64, (3, 3), name="conv64_1"),
+        Conv2D(64, (3, 3), name="conv64_2"),
         MaxPool2D((2, 2)),
-        Conv2d(128, (3, 3), name="conv128_1"),
-        Conv2d(128, (3, 3), name="conv128_2"),
+        Conv2D(128, (3, 3), name="conv128_1"),
+        Conv2D(128, (3, 3), name="conv128_2"),
         MaxPool2D((2, 2)),
-        Conv2d(256, (3, 3), name="conv256_1_1"),
-        Conv2d(256, (3, 3), name="conv256_1_2"),
+        Conv2D(256, (3, 3), name="conv256_1_1"),
+        Conv2D(256, (3, 3), name="conv256_1_2"),
         MaxPool2D((2, 2)),
-        Conv2d(256, (3, 3), name="conv256_2_1"),
-        Conv2d(256, (3, 3), name="conv256_2_2"),
+        Conv2D(256, (3, 3), name="conv256_2_1"),
+        Conv2D(256, (3, 3), name="conv256_2_2"),
         Flatten(),
         Dense(4096),
         Dense(4096),
         Dense(4096)
+    ])
+
+
+def get_custom_model():
+    return Sequential([
+        Conv2D(64, (3, 3), name="conv64_1", activation="relu"),
+        Conv2D(64, (3, 3), name="conv64_2", activation="relu"),
+        MaxPool2D((2, 2)),
+        Conv2D(128, (3, 3), name="conv128_1", activation="relu"),
+        Conv2D(128, (3, 3), name="conv128_2", activation="relu"),
+        MaxPool2D((2, 2)),
+        Flatten(),
+        Dense(128),
+        Dense(64),
+        Dense(16),
+        Dense(2, activation="softmax")
     ])
 
 
@@ -59,7 +78,7 @@ def generate_testdataset(dataset: List[Tuple[np.ndarray, np.ndarray]]):
     for img, lbl in dataset:
         regions = propose_regions(img, 100)
         for region in regions[:1000]:
-            iou_score = iou(lbl, region)
+            iou_score = calculate_intersection_over_union(lbl, region)
             train_labels.append(iou_score > 0.7 and 1. or 0.)
             train_images.append(get_region(img, region[0], region[1]))
     return train_images, train_labels
@@ -77,10 +96,12 @@ def prepare_images_from_data(data: List[Tuple[np.ndarray, np.ndarray]], target_s
 
 
 def get_model() -> Model:
-    model = get_vgg16_model()
-    input = model.layers[-2].output
+    model = get_custom_model()
+    return model
+    # input = model.layers[-2].output
+    input = model.output
     predictions = Dense(2, activation="softmax")(input)
-    return Model(input=model.input, output=predictions)
+    return Model(inputs=model.input, outputs=predictions)
 
 
 def get_region(image, area: List[int], size: List[int]):
@@ -111,5 +132,19 @@ def train(model: Model, save: str) -> Model:
     model.save(save, True)
 
 
-def prepare_data():
-    model = get_vgg16_model()
+def test_cutout():
+    waldos = get_waldos("256")
+    img = cv2.imread(str(waldos[0][0]))
+    cv2.imshow("Uncut", img)
+    cv2.waitKey(0)
+    regions = propose_regions(img, 2000)
+    print(regions)
+    while True:
+        reg = choice(regions)
+        cut = get_region(img, (reg[0], reg[1]), (reg[2], reg[3]))
+        cv2.imshow("Region", cut)
+        cv2.waitKey(0)
+
+
+if __name__ == "__main__":
+    test_cutout()
