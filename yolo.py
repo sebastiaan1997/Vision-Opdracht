@@ -21,29 +21,9 @@ from keras.regularizers import l2
 import keras.backend as k
 import os
 import datetime
-from keras.callbacks import LearningRateScheduler
+from keras.callbacks import LearningRateScheduler, ModelCheckpoint
 
 from json import dumps
-
-# gpus = tf.config.list_physical_devices('GPU')
-# if gpus:
-#     # Restrict TensorFlow to only allocate 1GB of memory on the first GPU
-#     try:
-#         tf.config.set_logical_device_configuration(
-#             gpus[0],
-#             [tf.config.LogicalDeviceConfiguration(memory_limit=2000)])
-#         logical_gpus = tf.config.list_logical_devices('GPU')
-#         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-#     except RuntimeError as e:
-#         # Virtual devices must be set before GPUs have been initialized
-#         print(e)
-
-
-# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-
-# from cython import compile
 
 
 class YoloReshape(Layer):
@@ -168,8 +148,8 @@ def get_yolo_model(img_h=448, img_w=448) -> Model:
         Conv2D(1024, (3, 3), padding="same", activation=lrelu),
         Conv2D(1024, (3, 3), padding="same", activation=lrelu),
         Flatten(),
-        Dense(4092, activation=lrelu),
-        Dense(7*7*6, activation=lrelu),
+        Dense(4092),
+        Dense(7*7*6),
         Reshape((7, 7, 6))
     ])
     return model
@@ -208,11 +188,6 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         # Scaled size of the object. Might be bigger than 1 if object is bigger than the cell.
         scaled_w = w / cell_w
         scaled_h = h / cell_h
-        probability = 1.0
-        head = [
-            probability,
-            # In our case it would be fine that we only train with one classifier.
-        ]
         cells = np.zeros((grid, grid, 6))
 
         # cells = [[0.0] * 5] * 9
@@ -230,18 +205,14 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255.), cells)
 
 
-def iou():
-    pass
-
-
 def get_bounding_box(prediction: np.ndarray, grid_size: int) -> np.ndarray:
-    probabilities = prediction[..., 0]
-    print(prediction.shape)
-    print("Probs", probabilities)
-    best_bet_y = np.argmax(probabilities, axis=1)
-    best_bet_x = np.argmax(probabilities[..., best_bet_y, 0])
-    print(best_bet_x, best_bet_y[best_bet_x])
+    probabilities = 1 / (1 + np.exp(prediction[..., 0]))
+    best_bet_x, best_bet_y = np.unravel_index(
+        np.argmax(probabilities)(grid_size, grid_size))
+
     coordinates = prediction[best_bet_x,  best_bet_y[best_bet_x], 1:5]
+    coordinates[2] = np.exp(coordinates[2])
+    coordinates[3] = np.exp(coordinates[3])
     absolute_coords = coordinates + \
         np.array([best_bet_x, best_bet_y[best_bet_x], 0, 0])
     return absolute_coords / float(grid_size)
@@ -270,11 +241,11 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
         """
         """
         # Get the classes (in our case 1 waldo).
-        label_class = y_true[..., 0]
+        label_class = y_true[..., 5]
         # Get the bounding boxes.
         label_box = y_true[..., 1:5]
 
-        label_prob = y_true[..., 5]
+        label_prob = y_true[..., 0]
 
         print(y_true)
         mask_shape = (7, 7)
@@ -288,7 +259,7 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
 
         # Get the bounding boxes from the predictions
         pred_box = y_pred[..., 1:5]
-        pred_prob = y_true[..., 5]
+        pred_prob = y_pred[..., 5]
 
         coord_mask = tf.expand_dims(label_prob, -1)
         # >= 7x7: [ x: 0..1, y: 0..1, w: 0.., h 0..]
@@ -300,7 +271,8 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
 
         if debug_print:
             tf.print("Size in", tf.nn.relu(pred_box[..., 2:4]))
-        pred_size = pred_box[..., 2:4]
+        # >= Not mentioned in paper, but in real implementation
+        pred_size = tf.exp(pred_box[..., 2:4])
         pred_half_size = pred_size * 0.5  # >= [[ hw: 0.5*w, hh: 0.5*h]]
 
         lbl_coord = label_box[..., 0:2]  # >= [[x: 0..1, y: 0..1]]
@@ -359,7 +331,7 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
         nb_class_box = tf.reduce_sum(tf.cast(class_mask > 0.0, tf.float32))
         print(coord_mask, lbl_coord, lbl_coord)
         loss_pos = tf.reduce_sum(
-            tf.square(lbl_coord - pred_coord) * coord_mask)
+            tf.square(pred_coord - lbl_coord) * coord_mask)
 
         if debug_print:
             tf.print("Loss for size", "Lbl_size", lbl_size, "Pred size", pred_size,
@@ -370,20 +342,21 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
         # tf.print("pred_size_gt_0", pred_size_gt_0)
         # tf.print("lbl_size_gt_0", lbl_size_gt_0)
         individual_loss = tf.square(
-            ((tf.sqrt(pred_size_gt_0 * coord_mask)) - (tf.sqrt(lbl_size_gt_0 * coord_mask))) * coord_mask)
+            ((tf.sqrt(pred_size_gt_0)) - (tf.sqrt(lbl_size_gt_0))) * coord_mask)
         # tf.print("individual_loss", individual_loss)
         loss_size = tf.reduce_sum(individual_loss)
         loss_confidence = tf.reduce_sum(
             tf.square(label_prob-pred_prob) * confidence_mask)
         # loss_class = tf.nn.sparse_softmax_cross_entropy_with_logits(
         #     labels=label_class, logits=pred_class)
-        pred_class = tf.clip_by_value(pred_class, -1e12, 1e12)
+        pred_class = pred_class
         loss_class = tf.reduce_sum(
-            (label_class - pred_class) * class_mask) / (nb_class_box + 1e-6)
+            tf.square(label_class - pred_class) * class_mask)
         if result_print or debug_print:
             tf.print("\n losses:", loss_pos, loss_size,
                      loss_confidence, loss_class, "\n")
-        loss = loss_pos + loss_size + loss_confidence + loss_class
+        loss = loss_pos + loss_size + \
+            loss_confidence + loss_class
         return loss
 
     return yolo_loss_v2_impl
@@ -392,24 +365,56 @@ def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool =
 tensorboard_callback = tf.keras.callbacks.TensorBoard(
     log_dir="tensorboard_log", histogram_freq=1)
 LR: List[Tuple[int, float]] = [
-    (0, 0.1e-2),
-    (30, 0.1e-3),
-    (60, 0.1e-4),
-    (90, 0.1e-5),
-    (120, 0.1e-6)
+    (0, 1e-4),
+    (90, 1e-5)
+    # (120, 0.1e-6)
 ]
+
+
+def get_bounding_boxes(prediction: np.ndarray, target_image_size: Tuple[int, int], grid_size=7) -> Iterable[Tuple[int, int, int, int]]:
+    shape = prediction.shape
+    for box_x in range(shape[0]):
+        for box_y in range(shape[1]):
+            box = prediction[box_x, box_y]
+            probability = box[0]
+            label = box[5]
+
+            print("Prob", probability, "Label", label)
+            if probability > 0.5:
+                x = box[1]
+                y = box[2]
+
+                w = np.exp(box[3]) / 2.
+                h = np.exp(box[4]) / 2.
+
+                x1 = float(box_x) + x - w
+                x2 = float(box_x) + x + w
+
+                y1 = float(box_y) + y - h
+                y2 = float(box_y) + y + h
+                yield (np.array([x1, y1, x2, y2]) / float(grid_size)) * np.array(target_image_size, np.float32).repeat(2)
+
+
+def predict(model: Model, image: np.ndarray):
+    prediction = model.predict(np.array([image]))
+    return get_bounding_boxes(prediction, image.shape)
 
 
 @ LearningRateScheduler
 def learning_rate(epoch: int, lr: float) -> float:
+    """ Schedules the learning rate for YOLO based on the LR"""
     for e, l in reversed(LR):
         if e <= epoch:
             return l
 
 
+model_checkpoint = ModelCheckpoint(
+    "best_yolo_model", monitor="loss", save_best_only=True, mode="min", period=1)
+
+
 if __name__ == "__main__":
-    # images = argument_dataset(load_images(get_waldos("256")))
-    images = load_images(get_waldos("256"))
+    images = argument_dataset(load_images(get_waldos("256")))
+    # images = load_images(get_waldos("256"))
 
     images = list(images)
     print("Images", len(images))
@@ -449,7 +454,7 @@ if __name__ == "__main__":
         model.compile(optimizer=Adam(learning_rate=0.5e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005),
                       loss=yolo_loss_v2(1, False, False))
         res = model.fit(ds, epochs=135, validation_data=vds, batch_size=5,
-                        callbacks=[learning_rate])
+                        callbacks=[learning_rate, model_checkpoint])
         model.save("yolo_waldo" + str(i), overwrite=True)
         with open(f"training{i}", "w") as f:
             f.write(str(res))

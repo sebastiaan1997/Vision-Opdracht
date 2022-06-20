@@ -41,7 +41,7 @@ def get_images(subset: str) -> ImageSet:
 
 def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
     dir = root_path.joinpath(folder).joinpath("waldo")
-    files = set([f.stem for f in dir.iterdir()])
+    files = sorted(list(set([f.stem for f in dir.iterdir()])))
     results = []
     for f in files:
         try:
