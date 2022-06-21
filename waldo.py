@@ -184,7 +184,7 @@ def crop(image: np.ndarray, label: np.ndarray, region: np.ndarray):
     assert (lt_max <= np.array([x2 - x1, y2-y1, x2 - x1, y2-y1])).all()
     valid = lt_max[0] == lt_max[2] or lt_max[1] == lt_max[3]
 
-    return cropped_image, lt_max, valid
+    return cropped_image, lt_max, not valid
 
 
 def stretch_to(image: np.ndarray, label: np.ndarray, new_size: np.ndarray):
