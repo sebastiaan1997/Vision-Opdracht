@@ -200,9 +200,11 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
             scaled_h,
             1.0,  # Probability of object in cell,
         ])
-
-        cells[cell_x, cell_y] = res
-        yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255.), cells)
+        try:
+            cells[cell_x, cell_y] = res
+            yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255.), cells)
+        except:
+            continue
 
 
 def get_bounding_box(prediction: np.ndarray, grid_size: int) -> np.ndarray:
