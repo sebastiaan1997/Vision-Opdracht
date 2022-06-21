@@ -17,7 +17,7 @@ import xmltodict
 # from cv2 import imread
 import cv2
 from typing import Iterable
-from scipy.ndimage import shift
+from scipy.ndimage import shift, zoom
 from random import random
 
 
@@ -106,6 +106,24 @@ def flip_v(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return flipped_img, new_lbl
 
 
+def stretch_w(img: np.ndarray, lbl: np.ndarray, factor: float = None):
+    if factor is None:
+        factor = random() + 0.5
+    w = img.shape[0]
+    h = img.shape[1]
+    zoomed = zoom(img, (factor, 1., 1.))
+    return crop(zoomed, lbl, np.array([0., 0., img.shape[0], img.shape[1]]))
+
+
+def stretch_h(img: np.ndarray, lbl: np.ndarray, factor: float = None):
+    if factor is None:
+        factor = random() + 0.5
+    w = img.shape[0]
+    h = img.shape[1]
+    zoomed = zoom(img, (1., factor, 1.))
+    return crop(zoomed, lbl, np.array([0., 0., img.shape[0], img.shape[1]]))
+
+
 def flip_h(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     flipped_img = cv2.flip(img, 1)
     shape = img.shape
@@ -118,18 +136,15 @@ def flip_h(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return flipped_img, new_lbl
 
 
-def scale():
-    pass
-
-
 def shift_image(image, lbl,  x_amount=None, y_amount=None) -> Tuple[np.ndarray, np.ndarray]:
     x, y, z = image.shape
     if x_amount is None:
         x_amount = int(round(x * (random() - 0.5) * .5))
     if y_amount is None:
         y_amount = int(round(y * (random() - 0.5) * .5))
+    shifted = shift(image, (x_amount, y_amount, 0))
 
-    return shift(image, (x_amount, y_amount, 0)), np.minimum(np.maximum(lbl + np.array([x_amount, y_amount, x_amount, y_amount]), 0.), np.array([x, y, x, y]))
+    return shifted, np.minimum(np.maximum(lbl + np.array([x_amount, y_amount, x_amount, y_amount]), 0.), np.array([x, y, x, y]))
 
 
 def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
@@ -138,33 +153,54 @@ def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
     result = [*images]
     result.extend([flip_v(img, lbl) for img, lbl in images])
     result.extend([flip_h(img, lbl) for img, lbl in images])
+    result.extend([(img2, lbl2) for img2, lbl2, v in (
+        stretch_w(img, lbl) for img, lbl in result) if v])
+    result.extend([(img2, lbl2) for img2, lbl2, v in (
+        stretch_h(img, lbl) for img, lbl in result) if v])
+    result.extend([(img2, lbl2) for img2, lbl2, v in (
+        cut_waldo(img, lbl) for img, lbl in images) if v])
+    result.extend([(img2, lbl2) for img2, lbl2, v in (
+        cut_waldo(img, lbl, 0) for img, lbl in images) if v])
+    # result.extend([stretch_h(img, lbl) for img, lbl in result])
     result.extend([shift_image(img, lbl) for img, lbl in images])
     result.extend([(change_brightness(img, random() + 0.5), lbl)
                   for img, lbl, in images])
     result.extend([(change_saturation(img, random() + 0.5), lbl)
                   for img, lbl, in images])
 
-    # result.extend([
-    #     *[(change_brightness(img, 0.8), lbl) for img, lbl, in result],
-    #     *[(change_brightness(img, 1.2), lbl) for img, lbl, in result]])
-    # result.extend([
-    #     *[(change_saturation(img, 0.8), lbl) for img, lbl, in result],
-    #     *[(change_saturation(img, 1.2), lbl) for img, lbl, in result]])
-
-    # result.extend([flip_v(img, lbl) for img, lbl in result])
-
-    # for img, lbl in result:
-    #     lbl = np.array([255, 0, 0, 0], dtype=np.float32) + \
-    #         (lbl * np.array([-1, 1, 1, 1]))
-    #     result.append((
-    #         cv2.flip(img, 0),
-    #         lbl
-    #     ))
-    # flipped = result[(, np.abs(lbl * np.array([-1, 1, 1, 1], np.float32))) for img, lbl in result]
-
     shuffle(result)
     print("Argumenting finished!")
     return result
+
+
+def crop(image: np.ndarray, label: np.ndarray, region: np.ndarray):
+    print("Region", region)
+    x1, y1, x2, y2 = region.round().astype(int).tolist()
+    cropped_image = image[x1:x2, y1: y2]
+    shifted_label = label - np.array([x1, y1, x1, y1])
+    gt0 = np.maximum(shifted_label, 0.)
+    lt_max = np.minimum(gt0, np.array([x2 - x1, y2-y1, x2 - x1, y2-y1]))
+    assert (lt_max >= 0.).all()
+    assert (lt_max <= np.array([x2 - x1, y2-y1, x2 - x1, y2-y1])).all()
+    valid = lt_max[0] == lt_max[2] or lt_max[1] == lt_max[3]
+
+    return cropped_image, lt_max, valid
+
+
+def stretch_to(image: np.ndarray, label: np.ndarray, new_size: np.ndarray):
+    w, h, c = image.shape
+    factor = new_size / np.array([w, h])
+    new_label = label * np.array(factor[0], factor[1], factor[0], factor[1])
+    resized = cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
+    return resized, new_label
+
+
+def cut_waldo(image: np.ndarray, label: np.ndarray, padding: int = None):
+    w, h, c = image.shape
+    if padding is None:
+        padding = int(round(random() * (min([w, h]))))
+    area = label + np.array([-padding, -padding, padding, padding])
+    return crop(image, label, area)
 
 
 def sample_images(image_set: ImageSet, training=0.7, validiation=0.2, testing=0.1) -> TrainingSet:
