@@ -59,6 +59,8 @@ def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
                 float(xml["xmin"]), float(xml["ymin"]), float(
                     xml["xmax"]), float(xml["ymax"])
             ])
+
+            print("BBox", arr)
             results.append((image, arr))
         except Exception as e:
             print(xml_document)
@@ -176,13 +178,14 @@ def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
 def crop(image: np.ndarray, label: np.ndarray, region: np.ndarray):
     print("Region", region)
     x1, y1, x2, y2 = region.round().astype(int).tolist()
-    cropped_image = image[x1:x2, y1: y2]
+    cropped_image = image[y1: y2, x1:x2]
     shifted_label = label - np.array([x1, y1, x1, y1])
     gt0 = np.maximum(shifted_label, 0.)
     lt_max = np.minimum(gt0, np.array([x2 - x1, y2-y1, x2 - x1, y2-y1]))
     assert (lt_max >= 0.).all()
     assert (lt_max <= np.array([x2 - x1, y2-y1, x2 - x1, y2-y1])).all()
     valid = lt_max[0] == lt_max[2] or lt_max[1] == lt_max[3]
+    print("New size", x1, x2, y1, y2, cropped_image.shape)
 
     return cropped_image, lt_max, not valid
 
