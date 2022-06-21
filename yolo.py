@@ -111,7 +111,7 @@ def yolo_loss(y_true, y_pred):
 yolo_leaky_activation = "relu"
 
 
-def get_yolo_model(img_h=448, img_w=448) -> Model:
+def get_yolo_model(img_h=448, img_w=448, load_model=None) -> Model:
     """Implementatie van het YoLo CNN zoals beschreven in paper"""
     lrelu = tf.keras.layers.LeakyReLU(alpha=0.1)
 
@@ -149,9 +149,13 @@ def get_yolo_model(img_h=448, img_w=448) -> Model:
         Conv2D(1024, (3, 3), padding="same", activation=lrelu),
         Flatten(),
         Dense(4092),
+        Dropout(0.5),
         Dense(7*7*6),
         Reshape((7, 7, 6))
     ])
+
+    # if load_model is not None:
+    # model.load_weights()
     return model
 
 
@@ -368,6 +372,8 @@ tensorboard_callback = tf.keras.callbacks.TensorBoard(
     log_dir="tensorboard_log", histogram_freq=1)
 LR: List[Tuple[int, float]] = [
     (0, 1e-4),
+    (2, 9e-5),
+    (30, 5e-5),
     (90, 1e-5)
     # (120, 0.1e-6)
 ]
@@ -455,7 +461,7 @@ if __name__ == "__main__":
             yolo_loss, [model.input, model.output], Tout=tf.float64)
         model.compile(optimizer=Adam(learning_rate=0.5e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005),
                       loss=yolo_loss_v2(1, False, False))
-        res = model.fit(ds, epochs=135, validation_data=vds, batch_size=5,
+        res = model.fit(ds, epochs=135, validation_data=vds, batch_size=60,
                         callbacks=[learning_rate, model_checkpoint])
         model.save("yolo_waldo" + str(i), overwrite=True)
         with open(f"training{i}", "w") as f:
