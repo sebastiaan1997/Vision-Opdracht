@@ -1,6 +1,7 @@
 
 
 from cgi import test
+from email.generator import Generator
 from logging import root
 import shutil
 from typing import List, Tuple, NamedTuple
@@ -16,6 +17,8 @@ import xmltodict
 # from cv2 import imread
 import cv2
 from typing import Iterable
+from scipy.ndimage import shift
+from random import random
 
 
 root_path = Path(__file__).parent.joinpath("wheres-waldo/Hey-Waldo")
@@ -63,6 +66,14 @@ def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
     return results
 
 
+def get_not_waldo(folder: str):
+    dir = root_path.joinpath(folder).joinpath("notwaldo")
+    files = sorted(list(set([f.stem for f in dir.iterdir()])))
+    for f in files:
+        image = str(dir.joinpath(f + ".jpg"))
+        yield cv2.imread(image)
+
+
 def load_images(images: List[Tuple[Path, np.ndarray]]):
     for path, bbox in images:
         img = cv2.imread(str(path))
@@ -88,22 +99,57 @@ def flip_v(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     shape = img.shape
     width = shape[0]
     new_lbl = lbl.copy()
-    new_lbl[0] = width - lbl[0]
+    new_lbl[0] = width - lbl[2]
+    new_lbl[2] = width - lbl[0]
+
+    print(f"Flipped vertical with width {width}", lbl, new_lbl)
     return flipped_img, new_lbl
 
 
+def flip_h(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    flipped_img = cv2.flip(img, 1)
+    shape = img.shape
+    height = shape[1]
+    new_lbl = lbl.copy()
+    new_lbl[1] = height - lbl[3]
+    new_lbl[3] = height - lbl[1]
+
+    print(f"Flipped horizontal with height {height}", lbl, new_lbl)
+    return flipped_img, new_lbl
+
+
+def scale():
+    pass
+
+
+def shift_image(image, lbl,  x_amount=None, y_amount=None) -> Tuple[np.ndarray, np.ndarray]:
+    x, y, z = image.shape
+    if x_amount is None:
+        x_amount = int(round(x * (random() - 0.5) * .5))
+    if y_amount is None:
+        y_amount = int(round(y * (random() - 0.5) * .5))
+
+    return shift(image, (x_amount, y_amount, 0)), np.minimum(np.maximum(lbl + np.array([x_amount, y_amount, x_amount, y_amount]), 0.), np.array([x, y, x, y]))
+
+
 def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
-    print("Argumenting images...")
+    print(f"Argumenting {len(images)} images...")
     images = list(images)
     result = [*images]
-    result.extend([flip_v(img, lbl) for img, lbl in result])
+    result.extend([flip_v(img, lbl) for img, lbl in images])
+    result.extend([flip_h(img, lbl) for img, lbl in images])
+    result.extend([shift_image(img, lbl) for img, lbl in images])
+    result.extend([(change_brightness(img, random() + 0.5), lbl)
+                  for img, lbl, in images])
+    result.extend([(change_saturation(img, random() + 0.5), lbl)
+                  for img, lbl, in images])
 
-    result.extend([
-        *[(change_brightness(img, 0.8), lbl) for img, lbl, in result],
-        *[(change_brightness(img, 1.2), lbl) for img, lbl, in result]])
-    result.extend([
-        *[(change_saturation(img, 0.8), lbl) for img, lbl, in result],
-        *[(change_saturation(img, 1.2), lbl) for img, lbl, in result]])
+    # result.extend([
+    #     *[(change_brightness(img, 0.8), lbl) for img, lbl, in result],
+    #     *[(change_brightness(img, 1.2), lbl) for img, lbl, in result]])
+    # result.extend([
+    #     *[(change_saturation(img, 0.8), lbl) for img, lbl, in result],
+    #     *[(change_saturation(img, 1.2), lbl) for img, lbl, in result]])
 
     # result.extend([flip_v(img, lbl) for img, lbl in result])
 
