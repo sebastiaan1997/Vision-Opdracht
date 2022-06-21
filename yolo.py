@@ -384,11 +384,12 @@ def get_bounding_boxes(prediction: np.ndarray, target_image_size: Tuple[int, int
     for box_x in range(shape[0]):
         for box_y in range(shape[1]):
             box = prediction[box_x, box_y]
+            print(box)
             probability = box[0]
             label = box[5]
 
             print("Prob", probability, "Label", label)
-            if probability > 0.5:
+            if probability > 0.9:
                 x = box[1]
                 y = box[2]
 

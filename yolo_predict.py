@@ -1,6 +1,6 @@
 from keras.models import load_model, Model
 import tensorflow as tf
-from yolo import yolo_loss_v2, prepare_data, get_bounding_box, get_bounding_boxes
+from yolo import predict, yolo_loss_v2, prepare_data, get_bounding_box, get_bounding_boxes
 from waldo import get_waldos, load_images
 import cv2
 import numpy as np
@@ -16,14 +16,16 @@ dataset = (
 )
 
 ds = tf.data.Dataset.from_tensor_slices(dataset).batch(1)
-m: Model = load_model("yolo_waldo5", custom_objects={
+m: Model = load_model("best_yolo_model", custom_objects={
                       "yolo_loss_v2_impl": yolo_loss_v2(1)})
 
 predictions = m.predict(ds)
 
 
 img_size = raw_dataset[0][0].shape
-bboxes = [list(get_bounding_boxes(predictions[0], (256, 256), 7))
+
+print(predictions.shape)
+bboxes = [list(get_bounding_boxes(predictions[i], (256, 256), 7))
           for i in range(30)]
 print(bboxes[0])
 
