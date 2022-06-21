@@ -150,8 +150,8 @@ def shift_image(image, lbl,  x_amount=None, y_amount=None) -> Tuple[np.ndarray, 
 
 
 def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
-    print(f"Argumenting {len(images)} images...")
     images = list(images)
+    print(f"Argumenting {len(images)} images...")
     result = [*images]
     result.extend([flip_v(img, lbl) for img, lbl in images])
     result.extend([flip_h(img, lbl) for img, lbl in images])
