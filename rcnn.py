@@ -1,12 +1,15 @@
-from waldo import get_waldos, load_images
+from waldo import get_waldos, load_images, argument_dataset
 from util_rcnn import calculate_intersection_over_union
 from typing import List, Tuple
 import tensorflow as tf
 from keras.utils import image_dataset_from_directory
 from keras.applications.vgg16 import VGG16
+from keras.optimizers import Adam
+from keras.losses import categorical_crossentropy
 import numpy as np
 from typing import Generator
 import keras
+import waldo as w
 import cv2
 from random import choice
 from keras.layers import Conv2D, Dense, MaxPool2D, Flatten, Input
@@ -27,6 +30,8 @@ def propose_regions(image: np.ndarray, amount=2000):
         ss = cv2.ximgproc.segmentation.createSelectiveSearchSegmentation()
     ss.setBaseImage(image)
     ss.switchToSelectiveSearchFast()
+    if amount is None:
+        return list(ss.process())
     return list(ss.process())[:amount]
 
 
@@ -73,14 +78,39 @@ def get_custom_model():
 
 
 def generate_testdataset(dataset: List[Tuple[np.ndarray, np.ndarray]]):
+
     train_images = []
     train_labels = []
-    for img, lbl in dataset:
-        regions = propose_regions(img, 100)
+    iou_scores = []
+    for i, (img, lbl) in enumerate(dataset):
+        true_images = []
+        false_images = []
+        true_labels = []
+        false_labels = []
+        regions = propose_regions(img, None)
         for region in regions[:1000]:
-            iou_score = calculate_intersection_over_union(lbl, region)
-            train_labels.append(iou_score > 0.7 and 1. or 0.)
-            train_images.append(get_region(img, region[0], region[1]))
+            bb_region = np.array([
+                region[0], region[1],
+                region[0] + region[2], region[1] + region[3]
+            ])
+            # print(region)
+            iou_score = calculate_intersection_over_union(lbl, bb_region)
+
+            iou_scores.append(iou_score)
+            if iou_score > 0.5 and len(true_images) < 30:
+                true_labels.append([1., 0.])
+                true_images.append(get_region(
+                    img, (region[0], region[1]), (region[2], region[3])))
+            if iou_score < 0.3 and len(false_images) < 30:
+                false_labels.append([0., 1.])
+                false_images.append(get_region(
+                    img, (region[0], region[1]), (region[2], region[3])))
+        train_images.extend(true_images)
+        train_images.extend(false_images)
+        train_labels.extend(true_labels)
+        train_labels.extend(false_labels)
+
+    print(max(iou_scores))
     return train_images, train_labels
 
 
@@ -89,6 +119,9 @@ def prepare_images_from_data(data: List[Tuple[np.ndarray, np.ndarray]], target_s
     for image, label in data:
         x, y, w, h = label[0], label[1], label[2] - \
             label[0], label[3] - label[1]
+
+        print(label)
+
         region = get_region(image, [x, y], [w, h])
         regions.append(cv2.resize(region, target_size,
                        interpolation=cv2.INTER_AREA))
@@ -96,9 +129,10 @@ def prepare_images_from_data(data: List[Tuple[np.ndarray, np.ndarray]], target_s
 
 
 def get_model() -> Model:
-    model = get_custom_model()
-    return model
+    # model = get_custom_model()
+    # return model
     # input = model.layers[-2].output
+    model = get_vgg16_model()
     input = model.output
     predictions = Dense(2, activation="softmax")(input)
     return Model(inputs=model.input, outputs=predictions)
@@ -109,27 +143,43 @@ def get_region(image, area: List[int], size: List[int]):
     return image[y:y+h, x:x+w].copy()
 
 
-def predict(image: np.ndarray) -> List[np.ndarray]:
-    model = get_model()
+def predict(image: np.ndarray, model: Model) -> List[np.ndarray]:
     waldos = []
-    for region in propose_regions(image):
-        region = get_region(region)
-        x, y, w, h = region
-        region_image = get_region(image, [x, y], [w, h])
-        resized_image = cv2.resize(
-            region_image, (224, 224), interpolation=cv2.INTER_AREA)
-        new_img = np.expand_dims(resized_image, axis=0)
-        result = model.predict(new_img)
-        if result[0][0] > 0.7:
-            waldos.append(region)
+    regions = list(propose_regions(image))
+    image_regions = [cv2.resize(
+        get_region(image, region[0:2], region[2:4]), (224, 224), interpolation=cv2.INTER_AREA) for region in regions]
+    data = tf.data.Dataset.from_tensor_slices((image_regions)).batch(1)
+
+    prediction = model.predict(data)
+
+    for i in range(len(image_regions)):
+        # result = model.predict(new_img)
+        if prediction[i][0] > 0.7:
+            waldos.append(regions[i])
     return waldos
 
 
-def train(model: Model, save: str) -> Model:
+def train(model: Model = get_custom_model(), save: str = "rcnn") -> Model:
     waldos = list(load_images(get_waldos("256")))
-    img, lbl = generate_testdataset(waldos)
-    model.fit(img, lbl)
+    training_waldos = waldos[:int(round((len(waldos) * 0.5)))]
+    verification_waldos = waldos[int(
+        round(len(waldos) * 0.5)): int(round(len(waldos) * 0.7))]
+    img, lbl = generate_testdataset(argument_dataset(training_waldos))
+    vimg, vlbl = generate_testdataset(argument_dataset(verification_waldos))
+
+    # training_waldos = waldos[:(len(waldos) * 0.5)]
+
+    img = list(map(prepare_image, img))
+    ds = tf.data.Dataset.from_tensor_slices((img, lbl)).batch(1)
+
+    vds = tf.data.Dataset.from_tensor_slices((vimg, vlbl)).batch(1)
+    model.compile(Adam(0.0001), loss=categorical_crossentropy)
+    model.fit(ds, epochs=20, batch_size=20, validation_data=vds)
     model.save(save, True)
+
+
+def prepare_image(image: cv2.Mat):
+    return (cv2.resize(image, ((224, 224))) / 225.)
 
 
 def test_cutout():
@@ -147,4 +197,4 @@ def test_cutout():
 
 
 if __name__ == "__main__":
-    test_cutout()
+    train()
