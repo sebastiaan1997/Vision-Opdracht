@@ -199,7 +199,9 @@ def cut_waldo(image: np.ndarray, label: np.ndarray, padding: int = None):
     w, h, c = image.shape
     if padding is None:
         padding = int(round(random() * (min([w, h]))))
-    area = label + np.array([-padding, -padding, padding, padding])
+    area = label + \
+        np.array([max(-padding, 0), max(-padding, 0),
+                 min(padding, w), min(padding, h)])
     return crop(image, label, area)
 
 
