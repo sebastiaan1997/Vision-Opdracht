@@ -67,16 +67,14 @@ def get_vgg16_model(pre_trained: bool = True) -> Model:
 
 def get_custom_model():
     return Sequential([
-        Conv2D(64, (3, 3), name="conv64_1", activation="relu"),
-        Conv2D(64, (3, 3), name="conv64_2", activation="relu"),
+        Conv2D(64, (3, 3), name="conv32_1", activation="relu"),
         MaxPool2D((2, 2)),
-        Conv2D(128, (3, 3), name="conv128_1", activation="relu"),
-        Conv2D(128, (3, 3), name="conv128_2", activation="relu"),
+        Conv2D(128, (3, 3), name="con64_1", activation="relu"),
         MaxPool2D((2, 2)),
+        Conv2D(128, (3, 3), name="conv64_2", activation="relu"),
+
         Flatten(),
-        Dense(128),
-        Dense(64),
-        Dense(16),
+        Dense(128, activation="relu"),
         Dense(2, activation="softmax")
     ])
 
@@ -136,8 +134,8 @@ def prepare_images_from_data(data: List[Tuple[np.ndarray, np.ndarray]], target_s
 
 
 def get_model() -> Model:
-    # model = get_custom_model()
-    # return model
+    model = get_custom_model()
+    return model
     # input = model.layers[-2].output
     model = get_vgg16_model()
     input = model.output
@@ -173,8 +171,8 @@ def get_augmentation_model():
         [
             layers.RandomFlip("horizontal"),
             layers.RandomRotation(0.1),
-            layers.RandomContrast(factor=0.2),
-            tf.keras.layers.RandomBrightness(factor=0.2)
+            layers.RandomContrast(factor=0.5),
+            tf.keras.layers.RandomBrightness(factor=0.5)
         ]
     )
 
@@ -183,7 +181,7 @@ def train(model: Model = get_custom_model(), save: str = "rcnn") -> Model:
     waldos = list(load_images(get_waldos("256")))
     training_waldos = waldos[:int(round((len(waldos) * 0.5)))]
     verification_waldos = waldos[int(
-        round(len(waldos) * 0.5)): int(round(len(waldos) * 0.7))]
+        round(len(waldos) * 0.5)): int(round(len(waldos) * 0.8))]
     img, lbl = generate_testdataset(training_waldos)
     vimg, vlbl = generate_testdataset(verification_waldos)
     print(np.asarray(img).shape)
@@ -196,13 +194,13 @@ def train(model: Model = get_custom_model(), save: str = "rcnn") -> Model:
     img = list(map(prepare_image, img))
     vimg = list(map(prepare_image, vimg))
     ds = tf.data.Dataset.from_tensor_slices(
-        (img, lbl)).batch(16).map(lambda x, y: (augmentation(x), y)).shuffle(buffer_size=2000)
+        (img, lbl)).batch(16).shuffle(buffer_size=2000).map(lambda x, y: (augmentation(x), y))
     vds = tf.data.Dataset.from_tensor_slices(
         (vimg, vlbl)).batch(16)
 
     model.compile(Adam(0.001), loss=categorical_crossentropy,
                   metrics=['accuracy'])
-    model.fit(ds, epochs=10, validation_data=vds)
+    model.fit(ds, epochs=40, validation_data=vds)
     model.save(save, True)
 
 
