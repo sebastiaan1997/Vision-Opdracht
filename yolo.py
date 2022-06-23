@@ -308,8 +308,6 @@ def yolo_loss(image_size, grid_size=7):
                             y_end = tf.minimum(y_max_pred, y_max_true)
 
                             if tf.logical_or(x_end < x_start, y_end < y_start):
-                                classification_loss += 0.5 * \
-                                    (c_true - c_pred) ** 2.
                                 continue
 
                             intersection = (x_end - x_start) * \
