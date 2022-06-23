@@ -26,9 +26,6 @@ from tensorflow.keras.regularizers import l2
 def get_augmentation_model():
     return keras.Sequential(
         [
-
-            # layers.RandomFlip("horizontal"),
-            # layers.RandomRotation(0.1),
             layers.RandomContrast(factor=.5),
             tf.keras.layers.RandomBrightness(factor=.5)
         ]
