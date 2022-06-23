@@ -1,24 +1,36 @@
 
-
-from cgi import test
-from email.generator import Generator
-from logging import root
-import shutil
-from typing import List, Tuple, NamedTuple
-from skimage import io
-import numpy as np
-from os import walk
-from pathlib import Path
-from random import randint, randrange
-from collections import namedtuple
-from random import shuffle
-from shutil import copy
-import xmltodict
-# from cv2 import imread
-import cv2
-from typing import Iterable
-from scipy.ndimage import shift, zoom
 from random import random
+from scipy.ndimage import shift, zoom
+from typing import Iterable
+import cv2
+import xmltodict
+from shutil import copy
+from random import shuffle
+from collections import namedtuple
+from random import randint, randrange
+from pathlib import Path
+from os import walk
+import numpy as np
+from skimage import io
+from typing import List, Tuple, NamedTuple
+import shutil
+from logging import root
+from email.generator import Generator
+from cgi import test
+import os
+import tensorflow as tf
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+try:
+    # Disable all GPUS
+    tf.config.set_visible_devices([], 'GPU')
+    visible_devices = tf.config.get_visible_devices()
+    for device in visible_devices:
+        assert device.device_type != 'GPU'
+except:
+    # Invalid device or cannot modify virtual devices once initialized.
+    pass
+
+# from cv2 import imread
 
 
 root_path = Path(__file__).parent.joinpath("wheres-waldo/Hey-Waldo")
@@ -153,22 +165,22 @@ def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
     images = list(images)
     print(f"Argumenting {len(images)} images...")
     result = [*images]
-    result.extend([flip_v(img, lbl) for img, lbl in images])
-    result.extend([flip_h(img, lbl) for img, lbl in images])
+    # result.extend([flip_v(img, lbl) for img, lbl in images])
+    # result.extend([flip_h(img, lbl) for img, lbl in images])
     result.extend([(img2, lbl2) for img2, lbl2, v in (
         stretch_w(img, lbl) for img, lbl in result) if v])
     result.extend([(img2, lbl2) for img2, lbl2, v in (
         stretch_h(img, lbl) for img, lbl in result) if v])
-    result.extend([(img2, lbl2) for img2, lbl2, v in (
-        cut_waldo(img, lbl) for img, lbl in images) if v])
-    result.extend([(img2, lbl2) for img2, lbl2, v in (
-        cut_waldo(img, lbl, 0) for img, lbl in images) if v])
+    # result.extend([(img2, lbl2) for img2, lbl2, v in (
+    #     cut_waldo(img, lbl) for img, lbl in images) if v])
+    # result.extend([(img2, lbl2) for img2, lbl2, v in (
+    #     cut_waldo(img, lbl, 0) for img, lbl in images) if v])
     # result.extend([stretch_h(img, lbl) for img, lbl in result])
     result.extend([shift_image(img, lbl) for img, lbl in images])
-    result.extend([(change_brightness(img, random() + 0.5), lbl)
-                  for img, lbl, in images])
-    result.extend([(change_saturation(img, random() + 0.5), lbl)
-                  for img, lbl, in images])
+    # result.extend([(change_brightness(img, random() + 0.5), lbl)
+    #               for img, lbl, in images])
+    # result.extend([(change_saturation(img, random() + 0.5), lbl)
+    #               for img, lbl, in images])
 
     shuffle(result)
     print("Argumenting finished!")

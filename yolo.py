@@ -34,68 +34,9 @@ import appel as a
 from tensorflow.keras.regularizers import l2
 
 
-class YoloReshape(Layer):
-    def __init__(self, target_shape, class_amount: int):
-        super(YoloReshape, self).__init__()
-        self.target_shape = target_shape
-        self.class_amount = class_amount
-
-    def get_config(self):
-        """"""
-        conf = super().get_config().copy()
-        conf.update({
-            "target_shape": self.target_shape
-        })
-        return conf
-
-    def call(self, input):
-        pass
-
-    # def yolo_loss(y_true, y_pred):
-    # """Loss function implemented according to the yolo paper"""
-    # pos_loss=[]
-    # size_loss=[]
-    # for true, pred in zip(y_true, y_pred):
-    # t_x, t_y, t_w, t_h=true
-    # p_x, p_y, p_w, p_h=pred
-    # pos_loss.append((t_x - p_x ** 2) + (t_y + p_y) ** 2)
-    # size_loss.append(((sqrt(p_w) - sqrt(t_w)) +
-    #                   (sqrt(p_h) - sqrt(t_h))) ** 2)
-
-    # def yolo_loss(y_true, y_pred):
-    # len(y_true
-
-# return sum(pos_loss) + sum(size_loss)
 
 
-def get_base_index(cell: int) -> int:
-    return 1 + (5*cell)
 
-
-def yolo_position_loss(prediction, truth, cell: int):
-    base_index = get_base_index(cell)
-    # Index 0 is x coordinate
-    # Index 1 is y coordinate
-    return (prediction[base_index + 1] - truth[base_index + 1]) ** 2 + (prediction[base_index + 2] - truth[base_index + 2])
-
-
-def yolo_size_loss(prediction, truth, cell: int):
-    base_index = get_base_index(cell)
-    return (sqrt(prediction[base_index + 3]) - sqrt(truth[base_index + 3])) ** 2 + (sqrt(prediction[base_index + 4]) - sqrt(truth[base_index + 4]))
-
-
-def object_in_cell(prediction, truth, cell: int) -> bool:
-    base_index = get_base_index(cell)
-    return truth[base_index + 0] >= 1.0
-
-
-def classification_loss(prediction, truth, cell: int) -> float:
-    base_index = get_base_index(cell)
-    return (truth[base_index + 0] - prediction[base_index + 0]) ** 2
-
-
-def classification_loss(prediction, truth, cell: int) -> float:
-    return (truth[0] - prediction[0]) ** 2
 
 
 yolo_leaky_activation = "relu"
@@ -180,10 +121,10 @@ def get_yolo_model(img_h=448, img_w=448, load_model=None) -> Model:
 def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_size=(448, 448)) -> Iterable[Tuple[np.ndarray, np.ndarray]]:
     for index, (image, bbox) in enumerate(images):
         # First split the bounding box into variables
-        w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        x = bbox[0] + (0.5*w)
-        y = bbox[1] + (0.5*h)
+        w = float(bbox[2] - bbox[0])
+        h = float(bbox[3] - bbox[1])
+        x = float(bbox[0]) + (0.5*float(w))
+        y = float(bbox[1]) + (0.5*float(h))
         # Descide the size of the cells or anchors of in the image
         try:
             shape = image.shape
@@ -198,19 +139,18 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         cell_y = int(y // cell_h)
         print(x, y, cell_x, cell_y)
         # Convert the x,y coordinate of the box to an index
-        cell_index = int(cell_x + (cell_y * grid))
         # Calculate the relative position of the bounding box to the grid cell
 
-        scaled_x = (x - (cell_w * cell_x)) / cell_w
-        scaled_y = (y - (cell_h * cell_y)) / cell_h
+        scaled_x = (float(x) / cell_w) % cell_w
+        scaled_y = (float(y) / cell_h) % cell_h
         # Calculate the size position of the bounding box to the grid cell
         # Scaled size of the object. Might be bigger than 1 if object is bigger than the cell.
         scaled_w = w / float(shape[1])
         scaled_h = h / float(shape[0])
+        # Create the grid
         cells = np.zeros((grid, grid, 6))
 
-        # cells = [[0.0] * 5] * 9
-
+        # Create the cell
         res = np.array([
             1.0,  # Waldo label, if more classes are allocated, here will be more classes
             scaled_x,
@@ -219,27 +159,16 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
             scaled_h,
             1.0,  # Probability of object in cell,
         ])
-        try:
-            cells[cell_x, cell_y] = res
-            yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255.), cells)
-        except:
-            continue
 
-
-def get_bounding_box(prediction: np.ndarray, grid_size: int) -> np.ndarray:
-    probabilities = 1 / (1 + np.exp(prediction[..., 0]))
-    best_bet_x, best_bet_y = np.unravel_index(
-        np.argmax(probabilities)(grid_size, grid_size))
-
-    coordinates = prediction[best_bet_x,  best_bet_y[best_bet_x], 1:5]
-    coordinates[2] = np.exp(coordinates[2])
-    coordinates[3] = np.exp(coordinates[3])
-    absolute_coords = coordinates + \
-        np.array([best_bet_x, best_bet_y[best_bet_x], 0, 0])
-    return absolute_coords / float(grid_size)
+        cells[cell_x, cell_y] = res
+        yield (np.divide(np.array(cv2.resize(image, target_size), np.float64), 255.), cells)
 
 
 def yolo_loss(image_size, grid_size=7):
+    """
+    Get the Yolo loss function
+
+    """
     grid_factor = np.array(image_size) / grid_size
 
     def yolo_loss_impl(y_true, y_pred):
@@ -264,6 +193,7 @@ def yolo_loss(image_size, grid_size=7):
             for x in range(tf.shape(prediction)[0]):
                 for y in range(tf.shape(prediction)[1]):
                     # Get the predicted x and y
+                    conf_pred = prediction[x, y, 0]
                     x_pos_pred = float(
                         x) + prediction[x, y, 1] * grid_factor[0]
                     y_pos_pred = float(
@@ -271,19 +201,20 @@ def yolo_loss(image_size, grid_size=7):
                     w_pred = prediction[x, y, 3] * image_size[0]
                     h_pred = prediction[x, y, 4] * image_size[1]
                     c_pred = prediction[x, y, 5]
-                    conf_pred = prediction[x, y, 0]
 
                     # Convert the predicted values for iou
-
+                    # Translate middle point to top-left and bottom right
                     x_min_pred = x_pos_pred - (w_pred * .5)
                     x_max_pred = x_pos_pred + (w_pred * .5)
 
                     y_min_pred = y_pos_pred - (h_pred * .5)
                     y_max_pred = y_pos_pred + (h_pred * .5)
+
+                    # Prepare for IOU challange
                     best_iou = 0.
                     best_x = -1
                     best_y = -1
-
+                    # Loop over all ground truths
                     for x_t in range(prediction.shape[0]):
                         for y_t in range(prediction.shape[1]):
                             # Get the ground truth x and y
@@ -293,8 +224,8 @@ def yolo_loss(image_size, grid_size=7):
                                 y_t) + truth[x_t, y_t, 2] * grid_factor[1]
                             w_true = truth[x_t, y_t, 3] * image_size[0]
                             h_true = truth[x_t, y_t, 4] * image_size[1]
-                            c_true = truth[x, y, 5]
-                            conf_true = truth[x, y, 0]
+                            c_true = truth[x_t, y_t, 5]
+                            conf_true = truth[x_t, y_t, 0]
 
                             x_min_true = x_pos_true - (w_true * .5)
                             x_max_true = x_pos_true + (w_true * .5)
@@ -306,15 +237,17 @@ def yolo_loss(image_size, grid_size=7):
 
                             x_end = tf.minimum(x_max_pred, x_max_true)
                             y_end = tf.minimum(y_max_pred, y_max_true)
-
+                            # If there is no intersection, skip
                             if tf.logical_or(x_end < x_start, y_end < y_start):
                                 continue
-
+                            
+                            # Calculate intersection
                             intersection = (x_end - x_start) * \
                                 (y_end - y_start)
 
+                            # Calculate areas of both bounding boxes
                             lhs_area = h_true * w_true
-                            rhs_area = h_pred * h_true
+                            rhs_area = h_pred * w_pred
                             # return intersection / ((lhs_area + rhs_area) - intersection)
 
                             iou = intersection / \
@@ -329,16 +262,16 @@ def yolo_loss(image_size, grid_size=7):
                             conf_true = truth[x, y, 0]
                             if x_t == best_x and y_t == best_y:
                                 x_pos_true = float(
-                                    x) + truth[x_t, y_t, 1] * grid_factor[0]
+                                    x_t) + truth[x_t, y_t, 1] * grid_factor[0]
                                 y_pos_true = float(
-                                    y) + truth[x_t, y_t, 2] * grid_factor[1]
+                                    y_t) + truth[x_t, y_t, 2] * grid_factor[1]
                                 w_true = truth[x_t, y_t, 3] * image_size[0]
                                 h_true = truth[x_t, y_t, 4] * image_size[1]
-                                c_true = truth[x, y, 5]
-                                pos_loss += (x_pos_true - x_pos_pred) ** 2 + \
-                                    (y_pos_true - y_pos_pred) ** 2
-                                size_loss += (w_true - w_pred) ** 2 + \
-                                    (w_true - w_pred) ** 2
+                                c_true = truth[x_t, y_t, 5]
+                                pos_loss += (x_pos_true - x_pos_pred) ** 2
+                                pos_loss += ((y_pos_true - y_pos_pred) ** 2)
+                                size_loss += ((w_true - w_pred) ** 2)
+                                size_loss += ((h_true - h_pred) ** 2)
                                 classification_loss += (c_true - c_pred) ** 2
                                 confidence_loss += (conf_true - conf_pred) ** 2
                             else:
@@ -386,9 +319,9 @@ def predict(model: Model, image: np.ndarray):
 
 
 LR: List[Tuple[int, float]] = [
-    (0, 1e-2),
-    (25, 1e-3),
-    (45, 1e-4),
+    (0, 1e-4),
+    (60, 1e-5),
+    (95, 1e-6),
     # (190, 1e-6)
     # (120, 0.1e-6)
 ]
@@ -458,7 +391,7 @@ if __name__ == "__main__":
         adm = Adam(learning_rate=0.1e-3)
         model.compile(optimizer=adm,
                       loss=yolo_loss((448, 448)), metrics=["accuracy"])
-        history = model.fit(ds, epochs=50, validation_data=vds, batch_size=8,
+        history = model.fit(ds, epochs=135, validation_data=vds, batch_size=8,
                             callbacks=[learning_rate])
         with open('/trainHistoryDict', 'wb') as file_pi:
             pickle.dump(history.history, file_pi)
