@@ -1,7 +1,11 @@
+from util_rcnn import calculate_intersection_over_union
 from ast import arg
 from distutils.log import debug
 from email.mime import base
 from unittest import result
+
+from torch import batch_norm
+from model_lib import get_augmentation_model
 from waldo import get_waldos, load_images, argument_dataset
 import cv2
 import itertools as itr
@@ -22,8 +26,12 @@ import keras.backend as k
 import os
 import datetime
 from keras.callbacks import LearningRateScheduler, ModelCheckpoint
-
+import keras.backend as K
+import pickle
+from yolo_loss import yolo_loss_plusplus
 from json import dumps
+import appel as a
+from tensorflow.keras.regularizers import l2
 
 
 class YoloReshape(Layer):
@@ -90,24 +98,6 @@ def classification_loss(prediction, truth, cell: int) -> float:
     return (truth[0] - prediction[0]) ** 2
 
 
-@tf.function
-def yolo_loss(y_true, y_pred):
-    loss = 0.0
-    s = tf.shape(y_true)
-    print(s)
-
-    for x in s[0]:
-        pred = y_pred[x]
-        true = y_true[x]
-        for i in range(9):
-            if object(pred, true, i):
-                loss += yolo_position_loss(pred, true, i) + yolo_size_loss(pred, true, i) + \
-                    classification_loss(pred, true, i)
-            else:
-                loss += classification_loss(pred, true, i)
-    return loss
-
-
 yolo_leaky_activation = "relu"
 
 
@@ -117,40 +107,65 @@ def get_yolo_model(img_h=448, img_w=448, load_model=None) -> Model:
 
     model = Sequential([
         Input((448, 448, 3)),
-        Conv2D(64, (7, 7), padding="same", strides=(2, 2), activation=lrelu),
+        Conv2D(64, (7, 7), padding="same", strides=(2, 2),
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
+        MaxPooling2D((2, 2), strides=((2, 2)), padding="same"
+                     ),
+        Conv2D(192, (3, 3), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
         MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
-        Conv2D(192, (3, 3), padding="same", activation=lrelu),
+        Conv2D(128, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(256, (3, 3), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
         MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
-        Conv2D(128, (1, 1), padding="same", activation=lrelu),
-        Conv2D(256, (3, 3), padding="same", activation=lrelu),
-        Conv2D(256, (1, 1), padding="same", activation=lrelu),
-        Conv2D(512, (3, 3), padding="same", activation=lrelu),
-        MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
-        Conv2D(256, (1, 1), padding="same", activation=lrelu),
-        Conv2D(512, (3, 3), padding="same", activation=lrelu),
-        Conv2D(256, (1, 1), padding="same", activation=lrelu),
-        Conv2D(512, (3, 3), padding="same", activation=lrelu),
-        Conv2D(256, (1, 1), padding="same", activation=lrelu),
-        Conv2D(512, (3, 3), padding="same", activation=lrelu),
-        Conv2D(256, (1, 1), padding="same", activation=lrelu),
-        Conv2D(512, (3, 3), padding="same", activation=lrelu),
-        Conv2D(512, (1, 1), padding="same", activation=lrelu),
-        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(256, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(512, (3, 3), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(512, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(1024, (3, 3), padding="same",
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
         MaxPooling2D((2, 2), strides=((2, 2)), padding="same"),
 
-        Conv2D(512, (1, 1), padding="same", activation=lrelu),
-        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        Conv2D(512, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(1024, (3, 3), padding="same",
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
 
-        Conv2D(512, (1, 1), padding="same", activation=lrelu),
-        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
-        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
-        Conv2D(1024, (3, 3), padding="same", strides=(2, 2), activation=lrelu),
-        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
-        Conv2D(1024, (3, 3), padding="same", activation=lrelu),
+        Conv2D(512, (1, 1), padding="same", activation=lrelu,
+               kernel_regularizer=l2(5e-4)),
+        Conv2D(1024, (3, 3), padding="same",
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
+        Conv2D(1024, (3, 3), padding="same",
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
+        Conv2D(1024, (3, 3), padding="same", strides=(2, 2),
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
+        Conv2D(1024, (3, 3), padding="same",
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
+        Conv2D(1024, (3, 3), padding="same",
+               activation=lrelu, kernel_regularizer=l2(5e-4)),
         Flatten(),
-        Dense(4092),
+        Dense(4096, kernel_regularizer=l2(5e-4), activation=lrelu),
         Dropout(0.5),
-        Dense(7*7*6),
+        Dense(7*7*6, kernel_regularizer=l2(5e-4)),
         Reshape((7, 7, 6))
     ])
 
@@ -176,8 +191,8 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         except Exception as e:
             print(f"failed at index {index}")
             raise e
-        cell_w = shape[0] / grid
-        cell_h = shape[1] / grid
+        cell_w = shape[1] / grid
+        cell_h = shape[0] / grid
         # Descide the anchor the object belongs to
         cell_x = int(x // cell_w)
         cell_y = int(y // cell_h)
@@ -190,8 +205,8 @@ def prepare_data(images: List[Tuple[np.ndarray, np.ndarray]], grid=7, target_siz
         scaled_y = (y - (cell_h * cell_y)) / cell_h
         # Calculate the size position of the bounding box to the grid cell
         # Scaled size of the object. Might be bigger than 1 if object is bigger than the cell.
-        scaled_w = w / cell_w
-        scaled_h = h / cell_h
+        scaled_w = w / float(shape[1])
+        scaled_h = h / float(shape[0])
         cells = np.zeros((grid, grid, 6))
 
         # cells = [[0.0] * 5] * 9
@@ -224,162 +239,124 @@ def get_bounding_box(prediction: np.ndarray, grid_size: int) -> np.ndarray:
     return absolute_coords / float(grid_size)
 
 
-def yolo_loss_v2(n_classes: int, debug_print: bool = False, result_print: bool = True):
-    """
-    Get the implementation of the loss function for Yolo
-    Based on implementation described by Vivek Maskara
-    (https://www.maskaravivek.com/post/yolov1/)
-    And the implementation descibed from GitHub author "experiencor"
-    (https://github.com/experiencor/keras-yolo2/blob/master/Yolo%20Step-by-Step.ipynb)
+def yolo_loss(image_size, grid_size=7):
+    grid_factor = np.array(image_size) / grid_size
 
-    Arguments:
-    ----------
-        n_classes (int): The number of classes in the dataset
-        debug_print (bool): Enables the debug prints
-
-    Returns:
-    --------
-        (Func[[Tensor, Tensor], float]): The loss function for a given prediction
-
-    """
-    @tf.function
-    def yolo_loss_v2_impl(y_true, y_pred):
+    def yolo_loss_impl(y_true, y_pred):
         """
+        Implementation of the Yolo Loss function for VISN-2020
         """
-        # Get the classes (in our case 1 waldo).
-        label_class = y_true[..., 5]
-        # Get the bounding boxes.
-        label_box = y_true[..., 1:5]
+        # Get the shape of the prediction
+        pred_shape = tf.shape(y_pred)
+        # Set the base number of loss
+        loss = 0.
+        for p_i in range(pred_shape[0]):
+            # Get the prediction
+            prediction = y_pred[p_i]
+            # Get the ground_truth
+            truth = y_true[p_i]
+            # Initialize all individiual loss components
+            pos_loss = 0.
+            size_loss = 0.
+            classification_loss = 0.
+            confidence_loss = 0.
+            # Loop over all prediction boxes
+            for x in range(tf.shape(prediction)[0]):
+                for y in range(tf.shape(prediction)[1]):
+                    # Get the predicted x and y
+                    x_pos_pred = float(
+                        x) + prediction[x, y, 1] * grid_factor[0]
+                    y_pos_pred = float(
+                        y) + prediction[x, y, 2] * grid_factor[1]
+                    w_pred = prediction[x, y, 3] * image_size[0]
+                    h_pred = prediction[x, y, 4] * image_size[1]
+                    c_pred = prediction[x, y, 5]
+                    conf_pred = prediction[x, y, 0]
 
-        label_prob = y_true[..., 0]
+                    # Convert the predicted values for iou
 
-        print(y_true)
-        mask_shape = (7, 7)
-        # coord_mask = tf.zeros(mask_shape)
-        confidence_mask = tf.zeros(mask_shape)
-        classification_mask = tf.zeros(mask_shape)
+                    x_min_pred = x_pos_pred - (w_pred * .5)
+                    x_max_pred = x_pos_pred + (w_pred * .5)
 
-        # Get the classes from the predictions
-        pred_class = y_pred[..., 0]
-        # >= 7x7: [ waldo: 0..1 ]
+                    y_min_pred = y_pos_pred - (h_pred * .5)
+                    y_max_pred = y_pos_pred + (h_pred * .5)
+                    best_iou = 0.
+                    best_x = -1
+                    best_y = -1
 
-        # Get the bounding boxes from the predictions
-        pred_box = y_pred[..., 1:5]
-        pred_prob = y_pred[..., 5]
+                    for x_t in range(prediction.shape[0]):
+                        for y_t in range(prediction.shape[1]):
+                            # Get the ground truth x and y
+                            x_pos_true = float(
+                                x) + truth[x_t, y_t, 1] * grid_factor[0]
+                            y_pos_true = float(
+                                y) + truth[x_t, y_t, 2] * grid_factor[1]
+                            w_true = truth[x_t, y_t, 3] * image_size[0]
+                            h_true = truth[x_t, y_t, 4] * image_size[1]
+                            c_true = truth[x, y, 5]
+                            conf_true = truth[x, y, 0]
 
-        coord_mask = tf.expand_dims(label_prob, -1)
-        # >= 7x7: [ x: 0..1, y: 0..1, w: 0.., h 0..]
-        # Get the coordinates and sizes of the predicted labels
+                            x_min_true = x_pos_true - (w_true * .5)
+                            x_max_true = x_pos_true + (w_true * .5)
+                            y_min_true = y_pos_true - (h_true * .5)
+                            y_max_true = y_pos_true + (h_true * .5)
 
-        # >= [[x: 0..1, y: 0..1]]
-        pred_coord = pred_box[..., 0:2]
-        # >= [[ w:0.., y: 0.. ]]
+                            x_start = tf.maximum(x_min_true, x_min_pred)
+                            y_start = tf.maximum(y_min_true, y_min_pred)
 
-        if debug_print:
-            tf.print("Size in", tf.nn.relu(pred_box[..., 2:4]))
-        # >= Not mentioned in paper, but in real implementation
-        pred_size = tf.exp(pred_box[..., 2:4])
-        pred_half_size = pred_size * 0.5  # >= [[ hw: 0.5*w, hh: 0.5*h]]
+                            x_end = tf.minimum(x_max_pred, x_max_true)
+                            y_end = tf.minimum(y_max_pred, y_max_true)
 
-        lbl_coord = label_box[..., 0:2]  # >= [[x: 0..1, y: 0..1]]
-        lbl_size = label_box[..., 2:4]   # >= [[ w:0.., y: 0.. ]]
-        lbl_half_size = lbl_size * 0.5   # >= [[ hw: 0.5*w, hh: 0.5*h]]
+                            if tf.logical_or(x_end < x_start, y_end < y_start):
+                                classification_loss += 0.5 * \
+                                    (c_true - c_pred) ** 2.
+                                continue
 
-        min_lbl_coord = lbl_coord - lbl_half_size
-        max_lbl_coord = lbl_coord + lbl_half_size
+                            intersection = (x_end - x_start) * \
+                                (y_end - y_start)
 
-        min_pred_coord = pred_coord - pred_half_size
-        max_pred_coord = pred_coord + pred_half_size
+                            lhs_area = h_true * w_true
+                            rhs_area = h_pred * h_true
+                            # return intersection / ((lhs_area + rhs_area) - intersection)
 
-        intersect_mins = k.maximum(min_lbl_coord, min_pred_coord)
-        intersect_max = k.minimum(max_lbl_coord, max_pred_coord)
+                            iou = intersection / \
+                                ((lhs_area + rhs_area) - intersection)
+                            # If the iou value is bigger than 6, apply the normal size and loss
+                            if tf.greater(iou, best_iou):
+                                best_iou = iou
+                                best_x = x_t
+                                best_y = y_t
+                    for x_t in range(prediction.shape[0]):
+                        for y_t in range(prediction.shape[1]):
+                            conf_true = truth[x, y, 0]
+                            if x_t == best_x and y_t == best_y:
+                                x_pos_true = float(
+                                    x) + truth[x_t, y_t, 1] * grid_factor[0]
+                                y_pos_true = float(
+                                    y) + truth[x_t, y_t, 2] * grid_factor[1]
+                                w_true = truth[x_t, y_t, 3] * image_size[0]
+                                h_true = truth[x_t, y_t, 4] * image_size[1]
+                                c_true = truth[x, y, 5]
+                                pos_loss += (x_pos_true - x_pos_pred) ** 2 + \
+                                    (y_pos_true - y_pos_pred) ** 2
+                                size_loss += (w_true - w_pred) ** 2 + \
+                                    (w_true - w_pred) ** 2
+                                classification_loss += (c_true - c_pred) ** 2
+                                confidence_loss += (conf_true - conf_pred) ** 2
+                            else:
+                                confidence_loss += .5 * \
+                                    ((conf_true - conf_pred) ** 2)
 
-        intersect_box = k.maximum(intersect_max - intersect_mins, 0.)
-        intersect_area = intersect_box[..., 0] * intersect_box[..., 1]
-
-        lbl_area = lbl_size[..., 0] * lbl_size[..., 1]
-        pred_area = pred_size[..., 0] * pred_size[..., 1]
-
-        iou = tf.truediv(intersect_area, lbl_area + pred_area - intersect_area)
-        box_confidence = iou * label_prob
-
-        box_class_confidence = box_confidence * label_class
-
-        pred_coord_4 = pred_coord
-        pred_size_4 = pred_size
-
-        pred_half_size_4 = pred_size_4 * .5
-        pred_coord_min_4 = pred_coord_4 - pred_half_size_4
-        pred_coord_max_4 = pred_coord_4 + pred_half_size_4
-
-        intersect_min_4 = tf.maximum(pred_coord_min_4, min_lbl_coord)
-        intersect_max_4 = tf.minimum(pred_coord_max_4, max_lbl_coord)
-        intersect_size_4 = tf.maximum(intersect_max_4 - intersect_min_4, 0.)
-        intersect_area_4 = intersect_size_4[..., 0] * intersect_size_4[..., 1]
-
-        pred_area_4 = pred_size_4[..., 0] * pred_size_4[..., 1]
-        iou_4 = tf.truediv(intersect_area_4, pred_area_4 +
-                           lbl_area - intersect_area_4)
-        best_iou = tf.reduce_max(iou_4, axis=2)
-
-        confidence_mask = confidence_mask + \
-            tf.cast(best_iou < .6, tf.float32) * \
-            (1 - label_prob)
-        confidence_mask = confidence_mask + label_prob
-
-        class_mask = label_prob + label_class
-
-        no_boxes_mask = tf.cast(coord_mask < .5, tf.float32)
-
-        nb_coord_box = tf.reduce_sum(tf.cast(coord_mask > 0.0, tf.float32))
-        nb_confidence_box = tf.reduce_sum(
-            tf.cast(confidence_mask > 0.0, tf.float32))
-        nb_class_box = tf.reduce_sum(tf.cast(class_mask > 0.0, tf.float32))
-        print(coord_mask, lbl_coord, lbl_coord)
-        loss_pos = tf.reduce_sum(
-            tf.square(pred_coord - lbl_coord) * coord_mask)
-
-        if debug_print:
-            tf.print("Loss for size", "Lbl_size", lbl_size, "Pred size", pred_size,
-                     tf.square(lbl_size - pred_size))
-        # Should be sqrt, but looking for option to limit values
-        pred_size_gt_0 = tf.maximum(pred_size, 0.)
-        lbl_size_gt_0 = tf.maximum(lbl_size, 0.)
-        # tf.print("pred_size_gt_0", pred_size_gt_0)
-        # tf.print("lbl_size_gt_0", lbl_size_gt_0)
-        individual_loss = tf.square(
-            ((tf.sqrt(pred_size_gt_0)) - (tf.sqrt(lbl_size_gt_0))) * coord_mask)
-        # tf.print("individual_loss", individual_loss)
-        loss_size = tf.reduce_sum(individual_loss)
-        loss_confidence = tf.reduce_sum(
-            tf.square(label_prob-pred_prob) * confidence_mask)
-        # loss_class = tf.nn.sparse_softmax_cross_entropy_with_logits(
-        #     labels=label_class, logits=pred_class)
-        pred_class = pred_class
-        loss_class = tf.reduce_sum(
-            tf.square(label_class - pred_class) * class_mask)
-        if result_print or debug_print:
-            tf.print("\n losses:", loss_pos, loss_size,
-                     loss_confidence, loss_class, "\n")
-        loss = loss_pos + loss_size + \
-            loss_confidence + loss_class
+            loss += pos_loss + size_loss + classification_loss + confidence_loss
         return loss
-
-    return yolo_loss_v2_impl
+    return yolo_loss_impl
 
 
 tensorboard_callback = tf.keras.callbacks.TensorBoard(
     log_dir="tensorboard_log", histogram_freq=1)
-LR: List[Tuple[int, float]] = [
-    (0, 1e-4),
-    (2, 9e-5),
-    (30, 5e-5),
-    (90, 1e-5)
-    # (120, 0.1e-6)
-]
 
 
-def get_bounding_boxes(prediction: np.ndarray, target_image_size: Tuple[int, int], grid_size=7) -> Iterable[Tuple[int, int, int, int]]:
+def get_bounding_boxes(prediction: np.ndarray, target_image_size: Tuple[int, int], grid_size=7, min_prob=.7) -> Iterable[Tuple[int, int, int, int]]:
     shape = prediction.shape
     for box_x in range(shape[0]):
         for box_y in range(shape[1]):
@@ -389,24 +366,34 @@ def get_bounding_boxes(prediction: np.ndarray, target_image_size: Tuple[int, int
             label = box[5]
 
             print("Prob", probability, "Label", label)
-            if probability > 0.9:
-                x = box[1]
-                y = box[2]
+            if probability > min_prob:
+                t_size = np.array(target_image_size)
+                cell_mult = t_size.astype(float) / 7.
 
-                w = np.exp(box[3]) / 2.
-                h = np.exp(box[4]) / 2.
+                x = box_x + box[1] * cell_mult[0]
+                y = box_y + box[2] * cell_mult[1]
+                w, h = box[3:5] * t_size
+                x1 = x - (w*.5)
+                x2 = x + (w*.5)
 
-                x1 = float(box_x) + x - w
-                x2 = float(box_x) + x + w
+                y1 = y - (h*.5)
+                y2 = y + (h*.5)
 
-                y1 = float(box_y) + y - h
-                y2 = float(box_y) + y + h
-                yield (np.array([x1, y1, x2, y2]) / float(grid_size)) * np.array(target_image_size, np.float32).repeat(2)
+                yield (np.minimum(np.maximum(np.array([x1, y1, x2, y2]), 0.), np.array([*t_size, *t_size])) / float(grid_size)) * np.array(target_image_size, np.float32).repeat(2)
 
 
 def predict(model: Model, image: np.ndarray):
     prediction = model.predict(np.array([image]))
     return get_bounding_boxes(prediction, image.shape)
+
+
+LR: List[Tuple[int, float]] = [
+    (0, 1e-4),
+    (25, 1e-5),
+    (45, 1e-6),
+    # (190, 1e-6)
+    # (120, 0.1e-6)
+]
 
 
 @ LearningRateScheduler
@@ -417,22 +404,29 @@ def learning_rate(epoch: int, lr: float) -> float:
             return l
 
 
-model_checkpoint = ModelCheckpoint(
-    "best_yolo_model", monitor="loss", save_best_only=True, mode="min", period=1)
-
-
 if __name__ == "__main__":
-    images = argument_dataset(load_images(get_waldos("256")))
-    # images = load_images(get_waldos("256"))
+    model_checkpoint = ModelCheckpoint(
+        "best_yolo_model_loss", monitor="loss", save_best_only=True, mode="min", period=5)
 
-    images = list(images)
-    print("Images", len(images))
-    # print(images)
+    model_checkpoint2 = ModelCheckpoint(
+        "best_yolo_model_valloss", monitor="val_loss", save_best_only=True, mode="min", period=5)
+
+    # if __name__ == "__main__":
+    # images = argument_dataset(load_images(get_waldos("256")))
+    images = list(load_images(get_waldos("256")))
+
     images = list(prepare_data(images))
+    # print("Images", len(images))
+    # # print(images)
 
-    training = images[:int(len(images)//2)]
-    end = int(((len(images)//2)+(len(images)//2))*0.2)
-    validation = images[int(len(images)//2):end]
+    # images = [(cv2.resize(img, (448, 448)) / 255., lbl)
+    #           for img, lbl in a.appel_to_yolo_notation(a.load_appels(True))]
+    train_amount = int(len(images)*.75)
+
+    training = images[:train_amount]
+    end = int(((len(images)*.75)+(len(images)*80))*0.2)
+    validation = images[train_amount:]
+    # print(training)
     images_input = [i[0] for i in training]
     bounding_boxes = [i[1] for i in training]
 
@@ -448,7 +442,10 @@ if __name__ == "__main__":
     # print(bounding_boxes)
     # print("BBox", bounding_boxes[0].shape)
     ds = tf.data.Dataset.from_tensor_slices(
-        (images_input, bounding_boxes)).batch(1)
+        (images_input, bounding_boxes)).batch(1).shuffle(buffer_size=500)
+    augmentation = get_augmentation_model()
+    ds = ds.map(lambda x, y: (augmentation(x), y))
+    ds.batch(5)
 
     vds = tf.data.Dataset.from_tensor_slices(
         (v_img, v_bb)).batch(1)
@@ -460,17 +457,18 @@ if __name__ == "__main__":
         i = 5
         loss = tf.py_function(
             yolo_loss, [model.input, model.output], Tout=tf.float64)
-        model.compile(optimizer=Adam(learning_rate=0.5e-4, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005),
-                      loss=yolo_loss_v2(1, False, False))
-        res = model.fit(ds, epochs=135, validation_data=vds, batch_size=60,
-                        callbacks=[learning_rate, model_checkpoint])
-        model.save("yolo_waldo" + str(i), overwrite=True)
-        with open(f"training{i}", "w") as f:
-            f.write(str(res))
+        adm = Adam(learning_rate=0.1e-3)
+        model.compile(optimizer=adm,
+                      loss=yolo_loss((448, 448)), metrics=["accuracy"])
+        history = model.fit(ds, epochs=50, validation_data=vds, batch_size=8,
+                            callbacks=[learning_rate])
+        with open('/trainHistoryDict', 'wb') as file_pi:
+            pickle.dump(history.history, file_pi)
+        model.save("yolo_135", overwrite=True)
         p = model.predict(tds)
         print(p)
 
-        with open(f"test{i}", "w"):
+        with open(f"test{i}", "w") as f:
             f.write(dumps(list(p)))
 
     except Exception as e:
