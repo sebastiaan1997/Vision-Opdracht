@@ -288,9 +288,9 @@ def yolo_loss(image_size, grid_size=7):
                         for y_t in range(prediction.shape[1]):
                             # Get the ground truth x and y
                             x_pos_true = float(
-                                x) + truth[x_t, y_t, 1] * grid_factor[0]
+                                x_t) + truth[x_t, y_t, 1] * grid_factor[0]
                             y_pos_true = float(
-                                y) + truth[x_t, y_t, 2] * grid_factor[1]
+                                y_t) + truth[x_t, y_t, 2] * grid_factor[1]
                             w_true = truth[x_t, y_t, 3] * image_size[0]
                             h_true = truth[x_t, y_t, 4] * image_size[1]
                             c_true = truth[x, y, 5]
@@ -386,9 +386,9 @@ def predict(model: Model, image: np.ndarray):
 
 
 LR: List[Tuple[int, float]] = [
-    (0, 1e-4),
-    (25, 1e-5),
-    (45, 1e-6),
+    (0, 1e-2),
+    (25, 1e-3),
+    (45, 1e-4),
     # (190, 1e-6)
     # (120, 0.1e-6)
 ]
