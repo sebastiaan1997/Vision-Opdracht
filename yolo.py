@@ -1,12 +1,5 @@
-from util_rcnn import calculate_intersection_over_union
-from ast import arg
-from distutils.log import debug
-from email.mime import base
-from unittest import result
-
-from torch import batch_norm
 from model_lib import get_augmentation_model
-from waldo import get_waldos, load_images, argument_dataset
+from waldo import get_waldos, load_images
 import cv2
 import itertools as itr
 from typing import Tuple, List, Iterable
@@ -14,25 +7,32 @@ from math import sqrt
 from pathlib import Path
 import tensorflow as tf
 import numpy as np
-from keras.utils.image_dataset import paths_and_labels_to_dataset
-from keras.utils import to_categorical, load_img, img_to_array, image_dataset_from_directory, plot_model
-from keras.layers import Conv3D, Conv2D, MaxPooling2D, Dense, Flatten, GlobalAveragePooling2D, Dropout, Input, Resizing, Rescaling, Layer, Reshape, LeakyReLU
-from keras.optimizers import Adam, SGD
-from keras.backend import less
+from keras.utils import to_categorical, image_dataset_from_directory, plot_model
+from keras.layers import Conv2D, MaxPooling2D, Dense, Flatten, Dropout, Rescaling, Layer, Reshape, LeakyReLU
+from keras.optimizers import Adam
+
 from keras.models import Sequential, Model
-from re import X
+
 from keras.regularizers import l2
 import keras.backend as k
-import os
-import datetime
+
 from keras.callbacks import LearningRateScheduler, ModelCheckpoint
 import keras.backend as K
 import pickle
-from yolo_loss import yolo_loss_plusplus
 from json import dumps
 import appel as a
 from tensorflow.keras.regularizers import l2
 
+def get_augmentation_model():
+    return keras.Sequential(
+        [
+
+            # layers.RandomFlip("horizontal"),
+            # layers.RandomRotation(0.1),
+            layers.RandomContrast(factor=.5),
+            tf.keras.layers.RandomBrightness(factor=.5)
+        ]
+    )
 
 
 
