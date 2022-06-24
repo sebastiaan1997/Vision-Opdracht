@@ -55,6 +55,7 @@ def get_images(subset: str) -> ImageSet:
 
 
 def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
+    """Get all waldos with """
     dir = root_path.joinpath(folder).joinpath("waldo")
     files = sorted(list(set([f.stem for f in dir.iterdir()])))
     results = []
@@ -81,6 +82,7 @@ def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
 
 
 def get_not_waldo(folder: str):
+    """Get all not waldo images from dataset subfolder"""
     dir = root_path.joinpath(folder).joinpath("notwaldo")
     files = sorted(list(set([f.stem for f in dir.iterdir()])))
     for f in files:
@@ -89,12 +91,25 @@ def get_not_waldo(folder: str):
 
 
 def load_images(images: List[Tuple[Path, np.ndarray]]):
+    """Loads the images for a waldo dataset"""
     for path, bbox in images:
         img = cv2.imread(str(path))
         yield (img, bbox)
 
 
 def change_brightness(img: np.ndarray, mult: float) -> np.ndarray:
+    """
+    Change the brightness of an image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image the brightness should be adapted for
+    mult(float): Multiplier for the brightness value
+
+    Returns:
+    --------
+    Copy of the input image with ajusted brightness
+    """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     hsv = np.minimum(np.maximum(
         hsv * np.array([1., 1., mult], dtype=np.float32), 255), 0)
@@ -102,6 +117,18 @@ def change_brightness(img: np.ndarray, mult: float) -> np.ndarray:
 
 
 def change_saturation(img: np.ndarray, mult: float) -> np.ndarray:
+    """
+    Change the saturation of an image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image the saturation should be adapted for
+    mult(float): Multiplier for the saturation value
+
+    Returns:
+    --------
+    Copy of the input image with ajusted saturation
+    """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     hsv = np.minimum(np.maximum(
         hsv * np.array([1., mult, 1.], dtype=np.float32), 255), 0)
@@ -109,6 +136,18 @@ def change_saturation(img: np.ndarray, mult: float) -> np.ndarray:
 
 
 def flip_v(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Flips the image vertically (y_max becomes y_min) and also adjusts the label to the flipped image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image 
+    lbl (np.ndarray): The label
+
+    Returns:
+    --------
+    (np.ndarray, np.ndarray) A flipped copy of the img argument and ajusted label
+    """
     flipped_img = cv2.flip(img, 0)
     shape = img.shape
     width = shape[0]
@@ -139,6 +178,18 @@ def stretch_h(img: np.ndarray, lbl: np.ndarray, factor: float = None):
 
 
 def flip_h(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Flips the image horizontally (x_max becomes x_min) and also adjusts the label to the flipped image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image 
+    lbl (np.ndarray): The label
+
+    Returns:
+    --------
+    (np.ndarray, np.ndarray) A flipped copy of the img argument and ajusted label
+    """
     flipped_img = cv2.flip(img, 1)
     shape = img.shape
     height = shape[1]

@@ -8,7 +8,7 @@ from pathlib import Path
 import tensorflow as tf
 import numpy as np
 from keras.utils import to_categorical, image_dataset_from_directory, plot_model
-from keras.layers import Conv2D, MaxPooling2D, Dense, Flatten, Dropout, Rescaling, Layer, Reshape, LeakyReLU
+from keras.layers import Conv2D, MaxPooling2D, Dense, Flatten, Dropout, Rescaling, Layer, Reshape, LeakyReLU, Input, LocallyConnected2D
 from keras.optimizers import Adam
 
 from keras.models import Sequential, Model
@@ -22,6 +22,9 @@ import pickle
 from json import dumps
 import appel as a
 from tensorflow.keras.regularizers import l2
+from keras import layers
+import keras
+
 
 def get_augmentation_model():
     return keras.Sequential(
@@ -30,10 +33,6 @@ def get_augmentation_model():
             tf.keras.layers.RandomBrightness(factor=.5)
         ]
     )
-
-
-
-
 
 
 yolo_leaky_activation = "relu"
@@ -101,7 +100,9 @@ def get_yolo_model(img_h=448, img_w=448, load_model=None) -> Model:
         Conv2D(1024, (3, 3), padding="same",
                activation=lrelu, kernel_regularizer=l2(5e-4)),
         Flatten(),
-        Dense(4096, kernel_regularizer=l2(5e-4), activation=lrelu),
+        Dense(512, kernel_regularizer=l2(5e-4)),
+        Dense(1024, kernel_regularizer=l2(5e-4)),
+
         Dropout(0.5),
         Dense(7*7*6, kernel_regularizer=l2(5e-4)),
         Reshape((7, 7, 6))
@@ -215,10 +216,10 @@ def yolo_loss(image_size, grid_size=7):
                     for x_t in range(prediction.shape[0]):
                         for y_t in range(prediction.shape[1]):
                             # Get the ground truth x and y
-                            x_pos_true = float(
-                                x_t) + truth[x_t, y_t, 1] * grid_factor[0]
-                            y_pos_true = float(
-                                y_t) + truth[x_t, y_t, 2] * grid_factor[1]
+                            x_pos_true = (float(
+                                x_t) + truth[x_t, y_t, 1]) * grid_factor[0]
+                            y_pos_true = (float(
+                                y_t) + truth[x_t, y_t, 2]) * grid_factor[1]
                             w_true = truth[x_t, y_t, 3] * image_size[0]
                             h_true = truth[x_t, y_t, 4] * image_size[1]
                             c_true = truth[x_t, y_t, 5]
@@ -237,7 +238,7 @@ def yolo_loss(image_size, grid_size=7):
                             # If there is no intersection, skip
                             if tf.logical_or(x_end < x_start, y_end < y_start):
                                 continue
-                            
+
                             # Calculate intersection
                             intersection = (x_end - x_start) * \
                                 (y_end - y_start)
@@ -258,15 +259,17 @@ def yolo_loss(image_size, grid_size=7):
                         for y_t in range(prediction.shape[1]):
                             conf_true = truth[x, y, 0]
                             if x_t == best_x and y_t == best_y:
-                                x_pos_true = float(
-                                    x_t) + truth[x_t, y_t, 1] * grid_factor[0]
-                                y_pos_true = float(
-                                    y_t) + truth[x_t, y_t, 2] * grid_factor[1]
+                                x_pos_true = (float(
+                                    x_t) + truth[x_t, y_t, 1]) * grid_factor[0]
+                                y_pos_true = (float(
+                                    y_t) + truth[x_t, y_t, 2]) * grid_factor[1]
                                 w_true = truth[x_t, y_t, 3] * image_size[0]
                                 h_true = truth[x_t, y_t, 4] * image_size[1]
                                 c_true = truth[x_t, y_t, 5]
+                                # Add the positional loss  to the pos_loss
                                 pos_loss += (x_pos_true - x_pos_pred) ** 2
                                 pos_loss += ((y_pos_true - y_pos_pred) ** 2)
+                                # Add the positional size to the size_loss
                                 size_loss += ((w_true - w_pred) ** 2)
                                 size_loss += ((h_true - h_pred) ** 2)
                                 classification_loss += (c_true - c_pred) ** 2
@@ -315,18 +318,19 @@ def predict(model: Model, image: np.ndarray):
     return get_bounding_boxes(prediction, image.shape)
 
 
-LR: List[Tuple[int, float]] = [
-    (0, 1e-4),
-    (60, 1e-5),
-    (95, 1e-6),
-    # (190, 1e-6)
-    # (120, 0.1e-6)
-]
+
 
 
 @ LearningRateScheduler
 def learning_rate(epoch: int, lr: float) -> float:
     """ Schedules the learning rate for YOLO based on the LR"""
+    LR: List[Tuple[int, float]] = [
+        (0, 1e-2),
+        (60, 1e-3),
+        (95, 1e-4),
+        # (190, 1e-6)
+        # (120, 0.1e-6)
+    ]
     for e, l in reversed(LR):
         if e <= epoch:
             return l
@@ -372,8 +376,8 @@ if __name__ == "__main__":
     ds = tf.data.Dataset.from_tensor_slices(
         (images_input, bounding_boxes)).batch(1).shuffle(buffer_size=500)
     augmentation = get_augmentation_model()
-    ds = ds.map(lambda x, y: (augmentation(x), y))
-    ds.batch(5)
+    # ds = ds.map(lambda x, y: (augmentation(x), y))
+    # ds.batch(5)
 
     vds = tf.data.Dataset.from_tensor_slices(
         (v_img, v_bb)).batch(1)
@@ -385,14 +389,15 @@ if __name__ == "__main__":
         i = 5
         loss = tf.py_function(
             yolo_loss, [model.input, model.output], Tout=tf.float64)
-        adm = Adam(learning_rate=0.1e-3)
+        adm = Adam(learning_rate=0.5e-4, beta_1=0.9,
+                   beta_2=0.999, epsilon=1e-08, decay=0.0)
         model.compile(optimizer=adm,
                       loss=yolo_loss((448, 448)), metrics=["accuracy"])
-        history = model.fit(ds, epochs=135, validation_data=vds, batch_size=8,
-                            callbacks=[learning_rate])
+        history = model.fit(ds, epochs=100, validation_data=vds, batch_size=1,
+                            callbacks=[])
         with open('/trainHistoryDict', 'wb') as file_pi:
             pickle.dump(history.history, file_pi)
-        model.save("yolo_135", overwrite=True)
+        model.save("yolo_10_segmentation", overwrite=True)
         p = model.predict(tds)
         print(p)
 
