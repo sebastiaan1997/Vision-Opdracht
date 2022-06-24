@@ -1,24 +1,36 @@
 
-
-from cgi import test
-from email.generator import Generator
-from logging import root
-import shutil
-from typing import List, Tuple, NamedTuple
-from skimage import io
-import numpy as np
-from os import walk
-from pathlib import Path
-from random import randint, randrange
-from collections import namedtuple
-from random import shuffle
-from shutil import copy
-import xmltodict
-# from cv2 import imread
-import cv2
-from typing import Iterable
-from scipy.ndimage import shift, zoom
 from random import random
+from scipy.ndimage import shift, zoom
+from typing import Iterable
+import cv2
+import xmltodict
+from shutil import copy
+from random import shuffle
+from collections import namedtuple
+from random import randint, randrange
+from pathlib import Path
+from os import walk
+import numpy as np
+from skimage import io
+from typing import List, Tuple, NamedTuple
+import shutil
+from logging import root
+from email.generator import Generator
+from cgi import test
+import os
+import tensorflow as tf
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+try:
+    # Disable all GPUS
+    tf.config.set_visible_devices([], 'GPU')
+    visible_devices = tf.config.get_visible_devices()
+    for device in visible_devices:
+        assert device.device_type != 'GPU'
+except:
+    # Invalid device or cannot modify virtual devices once initialized.
+    pass
+
+# from cv2 import imread
 
 
 root_path = Path(__file__).parent.joinpath("wheres-waldo/Hey-Waldo")
@@ -43,6 +55,7 @@ def get_images(subset: str) -> ImageSet:
 
 
 def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
+    """Get all waldos with """
     dir = root_path.joinpath(folder).joinpath("waldo")
     files = sorted(list(set([f.stem for f in dir.iterdir()])))
     results = []
@@ -69,6 +82,7 @@ def get_waldos(folder: str) -> List[Tuple[Path, np.ndarray]]:
 
 
 def get_not_waldo(folder: str):
+    """Get all not waldo images from dataset subfolder"""
     dir = root_path.joinpath(folder).joinpath("notwaldo")
     files = sorted(list(set([f.stem for f in dir.iterdir()])))
     for f in files:
@@ -77,12 +91,25 @@ def get_not_waldo(folder: str):
 
 
 def load_images(images: List[Tuple[Path, np.ndarray]]):
+    """Loads the images for a waldo dataset"""
     for path, bbox in images:
         img = cv2.imread(str(path))
         yield (img, bbox)
 
 
 def change_brightness(img: np.ndarray, mult: float) -> np.ndarray:
+    """
+    Change the brightness of an image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image the brightness should be adapted for
+    mult(float): Multiplier for the brightness value
+
+    Returns:
+    --------
+    Copy of the input image with ajusted brightness
+    """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     hsv = np.minimum(np.maximum(
         hsv * np.array([1., 1., mult], dtype=np.float32), 255), 0)
@@ -90,6 +117,18 @@ def change_brightness(img: np.ndarray, mult: float) -> np.ndarray:
 
 
 def change_saturation(img: np.ndarray, mult: float) -> np.ndarray:
+    """
+    Change the saturation of an image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image the saturation should be adapted for
+    mult(float): Multiplier for the saturation value
+
+    Returns:
+    --------
+    Copy of the input image with ajusted saturation
+    """
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     hsv = np.minimum(np.maximum(
         hsv * np.array([1., mult, 1.], dtype=np.float32), 255), 0)
@@ -97,6 +136,18 @@ def change_saturation(img: np.ndarray, mult: float) -> np.ndarray:
 
 
 def flip_v(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Flips the image vertically (y_max becomes y_min) and also adjusts the label to the flipped image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image 
+    lbl (np.ndarray): The label
+
+    Returns:
+    --------
+    (np.ndarray, np.ndarray) A flipped copy of the img argument and ajusted label
+    """
     flipped_img = cv2.flip(img, 0)
     shape = img.shape
     width = shape[0]
@@ -127,6 +178,18 @@ def stretch_h(img: np.ndarray, lbl: np.ndarray, factor: float = None):
 
 
 def flip_h(img: np.ndarray, lbl: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Flips the image horizontally (x_max becomes x_min) and also adjusts the label to the flipped image
+
+    Arguments:
+    ----------
+    img (np.ndarray): The image 
+    lbl (np.ndarray): The label
+
+    Returns:
+    --------
+    (np.ndarray, np.ndarray) A flipped copy of the img argument and ajusted label
+    """
     flipped_img = cv2.flip(img, 1)
     shape = img.shape
     height = shape[1]
@@ -153,22 +216,22 @@ def argument_dataset(images: List[Tuple[np.ndarray, np.ndarray]]):
     images = list(images)
     print(f"Argumenting {len(images)} images...")
     result = [*images]
-    result.extend([flip_v(img, lbl) for img, lbl in images])
-    result.extend([flip_h(img, lbl) for img, lbl in images])
+    # result.extend([flip_v(img, lbl) for img, lbl in images])
+    # result.extend([flip_h(img, lbl) for img, lbl in images])
     result.extend([(img2, lbl2) for img2, lbl2, v in (
         stretch_w(img, lbl) for img, lbl in result) if v])
     result.extend([(img2, lbl2) for img2, lbl2, v in (
         stretch_h(img, lbl) for img, lbl in result) if v])
-    result.extend([(img2, lbl2) for img2, lbl2, v in (
-        cut_waldo(img, lbl) for img, lbl in images) if v])
-    result.extend([(img2, lbl2) for img2, lbl2, v in (
-        cut_waldo(img, lbl, 0) for img, lbl in images) if v])
+    # result.extend([(img2, lbl2) for img2, lbl2, v in (
+    #     cut_waldo(img, lbl) for img, lbl in images) if v])
+    # result.extend([(img2, lbl2) for img2, lbl2, v in (
+    #     cut_waldo(img, lbl, 0) for img, lbl in images) if v])
     # result.extend([stretch_h(img, lbl) for img, lbl in result])
     result.extend([shift_image(img, lbl) for img, lbl in images])
-    result.extend([(change_brightness(img, random() + 0.5), lbl)
-                  for img, lbl, in images])
-    result.extend([(change_saturation(img, random() + 0.5), lbl)
-                  for img, lbl, in images])
+    # result.extend([(change_brightness(img, random() + 0.5), lbl)
+    #               for img, lbl, in images])
+    # result.extend([(change_saturation(img, random() + 0.5), lbl)
+    #               for img, lbl, in images])
 
     shuffle(result)
     print("Argumenting finished!")
